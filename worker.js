@@ -12,6 +12,8 @@ onmessage = function(e) {
     calculatePositions(e.data);
   } else if (type === 'CALCULATE_TRAJECTORY') {
     calculateTrajectory(e.data);
+  } else {
+    console.error("Invalid request type: " + type)
   }
 };
 
@@ -121,16 +123,4 @@ function calculateTrajectory(data) {
       trajectoryPoints: []
     });
   }
-}
-
-// Helper function to get orbital period
-// Add this if missing from your satellite.js version
-if (!satellite.getOrbitPeriod) {
-  satellite.getOrbitPeriod = function(satrec) {
-    // Get the mean motion in radians per minute
-    const meanMotion = satrec.no;
-
-    // Convert to orbital period in minutes
-    return meanMotion === 0 ? 0 : (2 * Math.PI) / meanMotion;
-  };
 }
