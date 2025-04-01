@@ -1,6 +1,7 @@
 body {
     margin: 0;
     overflow: hidden;
+    height: 100vh;
     background: #000;
 }
 
@@ -27,4 +28,8 @@ body {
 #layers label {
     display: block;
     margin: 5px 0;
+}
+
+canvas {
+    display: block;
 }
