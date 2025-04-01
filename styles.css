@@ -1,0 +1,30 @@
+body {
+    margin: 0;
+    overflow: hidden;
+    background: #000;
+}
+
+#controls {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    z-index: 1;
+    color: white;
+}
+
+#controls button {
+    margin-right: 5px;
+}
+
+#layers {
+    position: absolute;
+    top: 50px;
+    left: 10px;
+    z-index: 1;
+    color: white;
+}
+
+#layers label {
+    display: block;
+    margin: 5px 0;
+}

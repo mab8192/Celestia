@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AstroViz</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div id="controls">
+        <button id="backward">Step Backward</button>
+        <button id="play">Play/Pause</button>
+        <button id="forward">Step Forward</button>
+        <span id="time"></span>
+    </div>
+    <div id="layers">
+        <label><input type="checkbox" value="USA"> USA</label>
+        <label><input type="checkbox" value="SpaceX"> SpaceX</label>
+        <!-- Add more dynamically if needed -->
+    </div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/satellite.js@4.0.0/dist/satellite.min.js"></script>
+    <script src="https://unpkg.com/three@0.134.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="main.js"></script>
+</body>
+</html>
