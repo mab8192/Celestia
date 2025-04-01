@@ -297,22 +297,13 @@ function onWindowResize() {
 renderer.domElement.addEventListener('mousemove', onMouseMove, false);
 renderer.domElement.addEventListener('mouseout', onMouseOut, false);
 
-// Debug helper - add a visible indicator at mouse position
-let mouseHelper;
-function createMouseHelper() {
-    const geometry = new THREE.SphereGeometry(0.05, 16, 16);
-    const material = new THREE.MeshBasicMaterial({ color: 0xff0000 });
-    mouseHelper = new THREE.Mesh(geometry, material);
-    scene.add(mouseHelper);
-}
-// Uncomment to debug mouse position:
-createMouseHelper();
-
 function onMouseMove(event) {
     // Get mouse coordinates relative to the canvas
     const rect = renderer.domElement.getBoundingClientRect();
     mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
     mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+    console.log(`Mouse: ${mouse.x}, ${mouse.y}`);
 }
 
 function onMouseOut() {
@@ -336,7 +327,7 @@ infoDiv.style.display = 'none';
 document.body.appendChild(infoDiv);
 
 // Debug mode for raycasting
-const debugMode = true; // Set to false in production
+const debugMode = true;
 
 // --- Animation loop ---
 function animate() {
@@ -345,7 +336,6 @@ function animate() {
     const now = new Date();
     if (isRealTime) {
         // Update time and request positions only if time changed significantly (e.g., every second)
-        // This prevents spamming the worker
         if (!currentTime || now.getSeconds() !== currentTime.getSeconds()) {
             currentTime = now;
             // Only update positions if the initial load is complete or TLE data exists
@@ -358,18 +348,10 @@ function animate() {
     document.getElementById('time').textContent = currentTime.toUTCString();
 
     // Process hover detection
+    // TODO: NOT WORKING
     if (initialDataLoaded && satelliteCount > 0) {
         // Update the picking ray with the camera and mouse position
         raycaster.setFromCamera(mouse, camera);
-
-        // Update mouse helper position if enabled
-        if (mouseHelper) {
-            // Project mouse onto a plane at distance 10 from camera
-            const vector = new THREE.Vector3(mouse.x, mouse.y, 0.5).unproject(camera);
-            const dir = vector.sub(camera.position).normalize();
-            const distance = 10;
-            mouseHelper.position.copy(camera.position).add(dir.multiplyScalar(distance));
-        }
 
         // Calculate objects intersecting the picking ray
         const intersects = raycaster.intersectObject(satellites);
