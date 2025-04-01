@@ -88,7 +88,7 @@ function calculateTrajectory(data) {
     // Calculate positions along the orbit
     const timeStep = meanMotion / points; // minutes
 
-    for (let i = 0; i < points; i++) {
+    for (let i = 0; i <= points; i++) {
       // Calculate time for this point
       const pointTime = new Date(startDate.getTime() + i * timeStep * 60 * 1000);
 

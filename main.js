@@ -39,22 +39,18 @@ let tleData = []; // Initialize as empty array
 let metadata = [];
 let satellites;
 let geometry;
-let visibilities; // If you plan to use this later
-const MAX_SATELLITES = 10000; // Pre-allocate buffer size (adjust if needed)
+const MAX_SATELLITES = 10000; // Pre-allocated buffer size
 let satelliteCount = 0; // Track how many satellites are actually loaded
 
 const positions = new Float32Array(MAX_SATELLITES * 3); // x, y, z for each
-// Initialize positions to NaN or far away so they aren't rendered until ready
 positions.fill(0.0);
 
 geometry = new THREE.BufferGeometry();
 geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-// Crucially, set draw range to 0 initially. We'll increase it as data comes in.
 geometry.setDrawRange(0, 0);
 
-// Add a larger size for points and make them more visible
 const material = new THREE.PointsMaterial({
-    size: 0.03, // Increased from 0.01 for better visibility and easier hover detection
+    size: 0.03,
     color: 0xffffff,
     sizeAttenuation: true // Points get smaller further away
 });
@@ -65,7 +61,7 @@ scene.add(satellites); // Add the empty container to the scene
 // -- Raycaster for hover detection --
 const raycaster = new THREE.Raycaster();
 // Increase the threshold for easier selection
-raycaster.params.Points.threshold = 0.1; // Increased from 0.05
+raycaster.params.Points.threshold = 0.1;
 const mouse = new THREE.Vector2();
 let hoveredSatellite = null;
 let currentTrajectory = null; // Track the currently displayed trajectory
@@ -123,7 +119,6 @@ worker.onerror = (error) => {
     console.error("Error in web worker:", error);
 };
 
-// Function to draw a satellite's trajectory
 function drawTrajectory(points) {
     // Remove any existing trajectory line
     if (currentTrajectory) {
@@ -131,24 +126,43 @@ function drawTrajectory(points) {
         currentTrajectory = null;
     }
 
-    // Create a new line for the trajectory
     const lineGeometry = new THREE.BufferGeometry();
     const linePositions = new Float32Array(points.length * 3);
+    const lineAlphas = new Float32Array(points.length); // Stores per-vertex alpha
 
-    // Fill the buffer with trajectory points
     for (let i = 0; i < points.length; i++) {
+        // Set positions
         linePositions[i * 3] = points[i].x;
         linePositions[i * 3 + 1] = points[i].y;
         linePositions[i * 3 + 2] = points[i].z;
+
+        // Compute opacity: starts at 1 and fades to 0.4
+        lineAlphas[i] = 1 - (i / (points.length - 1)) * 0.6;
     }
 
     lineGeometry.setAttribute('position', new THREE.BufferAttribute(linePositions, 3));
+    lineGeometry.setAttribute('alpha', new THREE.BufferAttribute(lineAlphas, 1));
 
-    // Create material for the trajectory line
-    const lineMaterial = new THREE.LineBasicMaterial({
-        color: 0x00ffff,
-        linewidth: 2, // Increased from 1 for better visibility
-        opacity: 0.8, // Increased from 0.7 for better visibility
+    // Custom shader material to apply fading opacity
+    const lineMaterial = new THREE.ShaderMaterial({
+        uniforms: {
+            color: { value: new THREE.Color(0x00ffff) }
+        },
+        vertexShader: `
+            attribute float alpha;
+            varying float vAlpha;
+            void main() {
+                vAlpha = alpha;
+                gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+            }
+        `,
+        fragmentShader: `
+            uniform vec3 color;
+            varying float vAlpha;
+            void main() {
+                gl_FragColor = vec4(color, vAlpha);
+            }
+        `,
         transparent: true
     });
 
@@ -157,15 +171,42 @@ function drawTrajectory(points) {
     scene.add(currentTrajectory);
 }
 
+async function fetchTLE() {
+    const CACHE_KEY = 'tle_data';
+    const TIMESTAMP_KEY = 'tle_timestamp';
+    const MAX_AGE = 3 * 60 * 60 * 1000; // 3 hours in milliseconds
+
+    const cachedTLE = localStorage.getItem(CACHE_KEY);
+    const cachedTimestamp = localStorage.getItem(TIMESTAMP_KEY);
+
+    if (cachedTLE && cachedTimestamp && (Date.now() - parseInt(cachedTimestamp) < MAX_AGE)) {
+        console.log("Using cached TLE data.");
+        return cachedTLE;
+    }
+
+    console.log("Fetching new TLE data...");
+    try {
+        const response = await fetch('https://celestrak.com/NORAD/elements/gp.php?GROUP=active&FORMAT=tle');
+        if (!response.ok) throw new Error(`Failed to fetch TLE data: ${response.statusText}`);
+
+        const text = await response.text();
+        localStorage.setItem(CACHE_KEY, text);
+        localStorage.setItem(TIMESTAMP_KEY, Date.now().toString());
+
+        console.log("TLE data fetched and cached.");
+        return text;
+    } catch (error) {
+        console.error(error);
+        return cachedTLE || ""; // Fallback to cached data if available
+    }
+}
+
 // --- Satellite Initialization (Asynchronous) ---
 async function initSatellites() {
     console.log("Starting satellite data fetch...");
     try {
         // Fetch raw TLE text data
-        const response = await fetch('https://celestrak.com/NORAD/elements/gp.php?GROUP=active&FORMAT=tle');
-        if (!response.ok) throw new Error(`Failed to fetch TLE data: ${response.statusText}`);
-        const text = await response.text();
-        console.log("TLE data fetched.");
+        const text = await fetchTLE();
 
         // Parse TLE text into objects
         const lines = text.trim().split('\n');
@@ -346,13 +387,12 @@ function animate() {
     document.getElementById('time').textContent = currentTime.toUTCString();
 
     // Process hover detection
-    // TODO: NOT WORKING
     if (initialDataLoaded && satelliteCount > 0) {
         // Update the picking ray with the camera and mouse position
         raycaster.setFromCamera(mouse, camera);
 
         // Calculate objects intersecting the picking ray
-        const intersects = raycaster.intersectObject(satellites);
+        const intersects = raycaster.intersectObjects(scene.children, true);
 
         if (intersects.length > 0) {
             // We got a hover!
