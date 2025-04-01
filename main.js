@@ -302,8 +302,6 @@ function onMouseMove(event) {
     const rect = renderer.domElement.getBoundingClientRect();
     mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
     mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-
-    console.log(`Mouse: ${mouse.x}, ${mouse.y}`);
 }
 
 function onMouseOut() {
