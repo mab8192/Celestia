@@ -1,7 +1,21 @@
+// Add satellite info display element to DOM
+const infoDiv = document.createElement("div");
+infoDiv.id = "satelliteInfo";
+infoDiv.style.position = "absolute";
+infoDiv.style.top = "30px";
+infoDiv.style.left = "10px";
+infoDiv.style.padding = "10px";
+infoDiv.style.backgroundColor = "rgba(0,0,0,0.7)";
+infoDiv.style.color = "white";
+infoDiv.style.borderRadius = "5px";
+infoDiv.style.fontFamily = "monospace";
+infoDiv.style.display = "none";
+document.body.appendChild(infoDiv);
+
 // Scene setup
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(
-  75,
+  60,
   window.innerWidth / window.innerHeight,
   0.1,
   100000
@@ -143,7 +157,19 @@ controls.target.set(0, 0, 0);
 controls.enablePan = false;
 controls.minDistance = 1.5;
 controls.maxDistance = 50;
+camera.position.x = 10;
+camera.position.y = 10;
 camera.position.z = 10; // Start further back
+
+// --- Raycasting and Interaction ---
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+let highlightedSatellite = null;
+let highlightedIndex = -1;
+let selectedSatellite = null;
+let selectedIndex = -1;
+
+raycaster.params.Points.threshold = 0.02;
 
 // --- Satellite Data and Rendering Placeholder ---
 let tleData = []; // Initialize as empty array
@@ -167,8 +193,12 @@ const satMaterial = new THREE.PointsMaterial({
 satellites = new THREE.Points(satGeometry, satMaterial);
 scene.add(satellites); // Add the empty container to the scene
 
+const axesHelper = new THREE.AxesHelper( 5 );
+scene.add( axesHelper );
+
 // --- Trajectories ---
-let currentTrajectory = null; // Track the currently displayed trajectory
+let currentTrajectory = null; // Track the trajectory for the currently highlighted object
+let selectedTrajectory = null; // Track the trajectory for the currently selected object
 
 // --- Global State ---
 let currentTime = new Date();
@@ -180,11 +210,16 @@ const worker = new Worker("worker.js");
 
 // Modified worker message handler
 worker.onmessage = (e) => {
-  const { type, batchPositions, startIndex, count, trajectoryPoints } = e.data;
+  const {
+    type,
+    batchPositions,
+    startIndex,
+    count,
+    satelliteIndex,
+    trajectoryPoints,
+  } = e.data;
 
   if (type === "POSITIONS_UPDATE") {
-    console.log("Received position update");
-
     // Ensure we don't write past the buffer
     if (startIndex + count > MAX_SATELLITES) {
       console.warn("Received more satellite data than allocated buffer size.");
@@ -212,6 +247,9 @@ worker.onmessage = (e) => {
       satelliteCount = newTotalCount; // Update global count
     }
 
+    // Update bounding sphere
+    satGeometry.computeBoundingSphere();
+
     // If this message contains the last batch of the initial load
     if (satelliteCount === tleData.length) {
       initialDataLoaded = true;
@@ -219,7 +257,16 @@ worker.onmessage = (e) => {
     }
   } else if (type === "TRAJECTORY_DATA") {
     // Received orbital trajectory data - create a line from it
-    drawTrajectory(trajectoryPoints);
+    if (satelliteIndex === selectedIndex) {
+      if (selectedTrajectory) scene.remove(selectedTrajectory);
+      console.log("Adding selected trajectory");
+      selectedTrajectory = buildTrajectoryLine(trajectoryPoints, 0xff0000);
+      scene.add(selectedTrajectory);
+    } else {
+      if (currentTrajectory) scene.remove(currentTrajectory);
+      currentTrajectory = buildTrajectoryLine(trajectoryPoints, 0x00ffff);
+      scene.add(currentTrajectory);
+    }
   }
 };
 
@@ -227,13 +274,7 @@ worker.onerror = (error) => {
   console.error("Error in web worker:", error);
 };
 
-function drawTrajectory(points) {
-  // Remove any existing trajectory line
-  if (currentTrajectory) {
-    scene.remove(currentTrajectory);
-    currentTrajectory = null;
-  }
-
+function buildTrajectoryLine(points, color) {
   const lineGeometry = new THREE.BufferGeometry();
   const linePositions = new Float32Array(points.length * 3);
   const lineAlphas = new Float32Array(points.length); // Stores per-vertex alpha
@@ -257,7 +298,7 @@ function drawTrajectory(points) {
   // Custom shader material to apply fading opacity
   const lineMaterial = new THREE.ShaderMaterial({
     uniforms: {
-      color: { value: new THREE.Color(0x00ffff) },
+      color: { value: new THREE.Color(color) },
     },
     vertexShader: `
             attribute float alpha;
@@ -277,9 +318,7 @@ function drawTrajectory(points) {
     transparent: true,
   });
 
-  // Create and add the trajectory line
-  currentTrajectory = new THREE.Line(lineGeometry, lineMaterial);
-  scene.add(currentTrajectory);
+  return new THREE.Line(lineGeometry, lineMaterial);
 }
 
 async function fetchTLE() {
@@ -422,6 +461,87 @@ function clearTrajectory() {
   document.getElementById("satelliteInfo").style.display = "none";
 }
 
+function clearSelectedTrajectory() {
+  if (selectedTrajectory) {
+    scene.remove(selectedTrajectory);
+    selectedTrajectory = null;
+  }
+}
+
+// --- Functions for highlighting satellites on hover ---
+function highlightSatellite(index) {
+  // Store the index for comparison
+  highlightedIndex = index;
+
+  // Create a highlighted point
+  const highlightGeometry = new THREE.SphereGeometry(0.02, 16, 16);
+  const highlightMaterial = new THREE.MeshBasicMaterial({
+    color: 0x00ffff,
+    transparent: true,
+    opacity: 0.8,
+  });
+
+  highlightedSatellite = new THREE.Mesh(highlightGeometry, highlightMaterial);
+
+  // Position the highlight at the satellite position
+  highlightedSatellite.position.set(
+    satGeometry.attributes.position.array[index * 3],
+    satGeometry.attributes.position.array[index * 3 + 1],
+    satGeometry.attributes.position.array[index * 3 + 2]
+  );
+
+  scene.add(highlightedSatellite);
+
+  // Update the satellite info display
+  if (tleData[index]) {
+    document.getElementById("satelliteInfo").innerHTML = `
+            <div>Name: ${tleData[index].OBJECT_NAME}</div>
+            <div>NORAD ID: ${tleData[index].NORAD_ID}</div>
+        `;
+    document.getElementById("satelliteInfo").style.display = "block";
+  }
+}
+
+function resetHighlight() {
+  if (highlightedSatellite) {
+    scene.remove(highlightedSatellite);
+    highlightedSatellite = null;
+    highlightedIndex = -1;
+  }
+}
+
+function selectSatellite(index) {
+  // Store the index for comparison
+  selectedIndex = index;
+
+  // Create a highlighted point
+  const selectionGeometry = new THREE.SphereGeometry(0.02, 16, 16);
+  const selectionMaterial = new THREE.MeshBasicMaterial({
+    color: 0xff0000,
+    transparent: true,
+    opacity: 0.8,
+  });
+
+  selectedSatellite = new THREE.Mesh(selectionGeometry, selectionMaterial);
+
+  // Position the highlight at the satellite position
+  selectedSatellite.position.set(
+    satGeometry.attributes.position.array[index * 3],
+    satGeometry.attributes.position.array[index * 3 + 1],
+    satGeometry.attributes.position.array[index * 3 + 2]
+  );
+
+  scene.add(selectedSatellite);
+}
+
+function resetSelection() {
+  if (selectedSatellite) {
+    scene.remove(selectedSatellite);
+    selectedSatellite = null;
+    selectedIndex = -1;
+  }
+}
+
 // --- Time controls ---
 document.getElementById("forward").addEventListener("click", () => {
   isRealTime = false;
@@ -460,21 +580,91 @@ function onWindowResize() {
   renderer.setSize(window.innerWidth, window.innerHeight);
 }
 
+// Update mouse position for raycasting
+window.addEventListener("mousemove", onMouseMove, false);
+
+function onMouseMove(event) {
+  mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+  mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+  // Raycasting
+  raycaster.setFromCamera(mouse, camera);
+
+  // Calculate objects intersecting the picking ray
+  const intersects = raycaster.intersectObjects([satellites, earth]);
+
+  if (intersects.length > 0 && intersects[0].object != earth) {
+    // We hit a satellite
+    const index = intersects[0].index;
+
+    // Only process if it's a different satellite than currently highlighted
+    if (index !== highlightedIndex) {
+      // Remove previous highlight if any
+      resetHighlight();
+
+      // Highlight the new satellite
+      highlightSatellite(index);
+
+      // Request trajectory for this satellite
+      requestTrajectory(index);
+    }
+  } else if (highlightedSatellite) {
+    // No intersection but we have a highlight - clear it
+    resetHighlight();
+    clearTrajectory(); // Only clear the hover trajectory, not the selected one
+  }
+}
+
+window.addEventListener("mousedown", onMouseDown, false);
+
+function onMouseDown(event) {
+  if (highlightedSatellite) {
+    if (highlightedIndex != selectedIndex) {
+      resetSelection();
+      selectSatellite(highlightedIndex);
+      requestTrajectory(selectedIndex);
+    }
+  }
+}
+
+let lastUpdateTime = new Date();
+const updateIntervalMs = 500;
+
 // --- Animation loop ---
 function animate() {
   requestAnimationFrame(animate);
 
-  const now = new Date();
   if (isRealTime) {
-    // Update time and request positions only if time changed significantly (e.g., every second)
-    if (!currentTime || now.getSeconds() !== currentTime.getSeconds()) {
+    const now = new Date();
+    const elapsedTimeMs = now - lastUpdateTime;
+
+    // Update positions if half a second has passed and if initial data is loaded or TLE data exists
+    if (elapsedTimeMs >= updateIntervalMs && tleData.length > 0) {
       currentTime = now;
-      // Only update positions if the initial load is complete or TLE data exists
-      if (initialDataLoaded || tleData.length > 0) {
-        updatePositions();
-      }
+      updatePositions();
+
+      lastUpdateTime = now; // Update the last update time
     }
   }
+
+  // Update position of the highlighted satellite if it exists
+  if (highlightedSatellite && highlightedIndex >= 0) {
+    highlightedSatellite.position.set(
+      satGeometry.attributes.position.array[highlightedIndex * 3],
+      satGeometry.attributes.position.array[highlightedIndex * 3 + 1],
+      satGeometry.attributes.position.array[highlightedIndex * 3 + 2]
+    );
+  }
+
+  // Update position of the selected satellite if it exists
+  if (selectedSatellite && selectedIndex >= 0) {
+    selectedSatellite.position.set(
+      satGeometry.attributes.position.array[selectedIndex * 3],
+      satGeometry.attributes.position.array[selectedIndex * 3 + 1],
+      satGeometry.attributes.position.array[selectedIndex * 3 + 2]
+    );
+  }
+
   // Update time display regardless
   document.getElementById("time").textContent = currentTime.toUTCString();
 

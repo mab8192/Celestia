@@ -76,7 +76,7 @@ function calculateSatellitePosition(satData, date) {
 
 // Calculate a satellite's orbital trajectory
 function calculateTrajectory(data) {
-  const { tle, startTime, points } = data;
+  const { tle, satelliteIndex, startTime, points } = data;
   const startDate = new Date(startTime);
   const trajectoryPoints = [];
 
@@ -112,6 +112,7 @@ function calculateTrajectory(data) {
     // Send complete trajectory back to main thread
     postMessage({
       type: 'TRAJECTORY_DATA',
+      satelliteIndex: satelliteIndex,
       trajectoryPoints: trajectoryPoints
     });
 
@@ -123,4 +124,15 @@ function calculateTrajectory(data) {
       trajectoryPoints: []
     });
   }
+}
+
+// Helper function to get orbital period
+if (!satellite.getOrbitPeriod) {
+  satellite.getOrbitPeriod = function(satrec) {
+    // Get the mean motion in radians per minute
+    const meanMotion = satrec.no;
+
+    // Convert to orbital period in minutes
+    return meanMotion === 0 ? 0 : (2 * Math.PI) / meanMotion;
+  };
 }
