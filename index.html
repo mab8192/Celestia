@@ -10,17 +10,28 @@
 <body>
     <!-- Top-left controls (Search & Hover Info) -->
     <div id="controls">
-        <input type="text" id="searchInput" placeholder="Search by Name or NORAD ID">
+        <div style="position: relative;"> <!-- Wrapper for positioning suggestions -->
+            <input type="text" id="searchInput" placeholder="Search by Name or NORAD ID" autocomplete="off">
+            <div id="autocomplete-suggestions"></div> <!-- Container for suggestions -->
+        </div>
         <button id="searchButton">Search</button>
     </div>
     <div id="satelliteInfo"></div> <!-- For Hovered Satellite -->
     <div id="selectedSatelliteInfo"></div> <!-- For Selected Satellite -->
 
+    <!-- Camera Target Controls -->
+    <div id="target-controls">
+        <span>Target:</span>
+        <button data-target="earth">Earth</button>
+        <button data-target="moon">Moon</button>
+        <button data-target="sun">Sun</button>
+    </div>
+
     <!-- Bottom-center time controls -->
     <div id="time-controls">
-        <button id="backward">⏪</button>
-        <button id="play">▶️</button> <!-- Initial state: Play -->
-        <button id="forward">⏩</button>
+        <button id="backward">⏮</button>
+        <button id="play">▶</button>
+        <button id="forward">⏭</button>
         <span id="time"></span>
     </div>
 

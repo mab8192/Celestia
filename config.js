@@ -7,3 +7,7 @@ export const RAYCASTER_POINT_THRESHOLD = 0.02;
 export const PLANET_GEOMETRY_DETAIL = 64;
 export const SUN_GEOMETRY_DETAIL = 32;
 export const STARFIELD_SPHERE_RADIUS = 50000;
+export const MOON_DISTANCE = 384400 * SCALE; // km
+export const MOON_RADIUS = 1737.4 * SCALE; // km
+export const MOON_PERIOD_MS = 27.3 * 24 * 60 * 60 * 1000; // 27.3 days
+export const MOON_GEOMETRY_DETAIL = 32;
