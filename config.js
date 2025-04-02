@@ -1,4 +1,5 @@
-export const SCALE = 1.0 / 6371; // scale down so 1 unit = 1 earth radius
+export const EARTH_RADIUS_KM = 6371;
+export const SCALE = 1.0 / EARTH_RADIUS_KM; // scale down so 1 unit = 1 earth radius
 export const SUN_DISTANCE = 149597870 * SCALE; // km
 export const SUN_RADIUS = 696340 * SCALE; // km
 export const MAX_SATELLITES = 20000;

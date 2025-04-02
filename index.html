@@ -8,12 +8,22 @@
     <link rel="icon" type="image/x-icon" href="/assets/favicon.ico">
 </head>
 <body>
+    <!-- Top-left controls (Search & Hover Info) -->
     <div id="controls">
-        <button id="backward">Step Backward</button>
-        <button id="play">Play/Pause</button>
-        <button id="forward">Step Forward</button>
+        <input type="text" id="searchInput" placeholder="Search by Name or NORAD ID">
+        <button id="searchButton">Search</button>
+    </div>
+    <div id="satelliteInfo"></div> <!-- For Hovered Satellite -->
+    <div id="selectedSatelliteInfo"></div> <!-- For Selected Satellite -->
+
+    <!-- Bottom-center time controls -->
+    <div id="time-controls">
+        <button id="backward">⏪</button>
+        <button id="play">▶️</button> <!-- Initial state: Play -->
+        <button id="forward">⏩</button>
         <span id="time"></span>
     </div>
+
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/satellite.js@4.0.0/dist/satellite.min.js"></script>
     <script src="https://unpkg.com/three@0.134.0/examples/js/controls/OrbitControls.js"></script>

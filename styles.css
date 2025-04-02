@@ -2,19 +2,78 @@ body {
     margin: 0;
     overflow: hidden;
     height: 100vh;
-    background: #000;
+    background: #1a1a1a; /* Darker background */
+    color: #e0e0e0; /* Light gray text */
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; /* Modern font */
 }
 
 #controls {
     position: absolute;
-    top: 10px;
-    left: 10px;
-    z-index: 1;
-    color: white;
+    top: 15px;
+    left: 15px;
+    z-index: 10;
+    background-color: rgba(40, 40, 40, 0.8); /* Semi-transparent dark background */
+    padding: 10px 15px;
+    border-radius: 8px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+    display: flex; /* Align items nicely */
+    align-items: center;
+    gap: 10px; /* Spacing between elements */
 }
 
 #controls button {
-    margin-right: 5px;
+    background-color: #4CAF50; /* Green */
+    border: none;
+    color: white;
+    padding: 8px 15px;
+    text-align: center;
+    text-decoration: none;
+    display: inline-block;
+    font-size: 14px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+}
+
+#controls button:hover {
+    background-color: #45a049; /* Darker green on hover */
+}
+
+#controls button:active {
+    background-color: #3e8e41;
+}
+
+#time {
+    font-weight: bold;
+    min-width: 150px; /* Give time display some space */
+    text-align: center;
+}
+
+#controls #searchInput {
+    padding: 8px 10px;
+    border-radius: 4px;
+    border: 1px solid #555;
+    background-color: #333;
+    color: #e0e0e0;
+    font-size: 14px;
+}
+
+#controls #searchButton {
+    background-color: #007bff; /* Blue */
+    border: none;
+    color: white;
+    padding: 8px 15px;
+    text-align: center;
+    text-decoration: none;
+    display: inline-block;
+    font-size: 14px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+}
+
+#controls #searchButton:hover {
+    background-color: #0056b3; /* Darker blue on hover */
 }
 
 #layers {
@@ -32,4 +91,117 @@ body {
 
 canvas {
     display: block;
+}
+
+/* --- New Time Controls Styles --- */
+#time-controls {
+    position: absolute;
+    bottom: 20px; /* Distance from bottom */
+    left: 50%;
+    transform: translateX(-50%); /* Center horizontally */
+    z-index: 10;
+    background-color: rgba(40, 40, 40, 0.8);
+    padding: 10px 20px;
+    border-radius: 8px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+    display: flex;
+    align-items: center;
+    gap: 15px; /* Slightly more space for icons */
+}
+
+#time-controls button {
+    background-color: #555; /* Neutral background */
+    border: none;
+    color: white;
+    padding: 5px 10px; /* Adjust padding for icons */
+    text-align: center;
+    text-decoration: none;
+    display: inline-block;
+    font-size: 18px; /* Larger icons */
+    border-radius: 50%; /* Circular buttons */
+    width: 40px; /* Fixed width */
+    height: 40px; /* Fixed height */
+    line-height: 30px; /* Vertically center icon (approx) */
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+}
+
+#time-controls button:hover {
+    background-color: #777;
+}
+
+#time-controls button:active {
+    background-color: #444;
+}
+
+/* Specific style for play/pause button if needed */
+#time-controls #play {
+    background-color: #4CAF50; /* Green for play */
+}
+#time-controls #play:hover {
+    background-color: #45a049;
+}
+
+#time-controls #time {
+    color: #e0e0e0;
+    font-weight: bold;
+    font-size: 14px;
+    min-width: 180px; /* Ensure enough space */
+    text-align: center;
+}
+
+/* --- Satellite Info Display --- */
+#satelliteInfo {
+    position: absolute;
+    top: 75px; /* Position below the controls */
+    left: 15px;
+    z-index: 9; /* Below controls but above canvas */
+    background-color: rgba(40, 40, 40, 0.85); /* Slightly more opaque */
+    padding: 15px;
+    border-radius: 8px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+    color: #e0e0e0;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    font-size: 13px;
+    max-width: 250px; /* Prevent it from becoming too wide */
+    display: none; /* Initially hidden */
+    border: 1px solid #555;
+}
+
+#satelliteInfo div {
+    margin-bottom: 5px; /* Space between lines */
+}
+
+#satelliteInfo span {
+    font-weight: bold;
+    color: #aaa; /* Slightly dimmer labels */
+    margin-right: 5px;
+}
+
+/* --- Selected Satellite Info Display --- */
+#selectedSatelliteInfo {
+    position: absolute;
+    bottom: 15px; /* Adjust based on #satelliteInfo height, or use JS */
+    left: 15px;
+    z-index: 8; /* Below hover info */
+    background-color: rgba(50, 50, 30, 0.85); /* Slightly different background */
+    padding: 15px;
+    border-radius: 8px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+    color: #e0e0e0;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    font-size: 13px;
+    max-width: 250px;
+    display: none; /* Initially hidden */
+    border: 1px solid #cca300; /* Gold border for selected */
+}
+
+#selectedSatelliteInfo div {
+    margin-bottom: 5px;
+}
+
+#selectedSatelliteInfo span {
+    font-weight: bold;
+    color: #ccc; /* Brighter labels for selected */
+    margin-right: 5px;
 }
