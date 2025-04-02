@@ -1,5 +1,8 @@
-// Import satellite.js in your worker
+// Import satellite.js using importScripts
 importScripts('https://cdnjs.cloudflare.com/ajax/libs/satellite.js/4.0.0/satellite.min.js');
+
+// Configuration constant (replace import)
+const SCALE = 1 / 6371; // Define SCALE directly, copied from config.js
 
 // Set batch size for processing
 const BATCH_SIZE = 500;
@@ -60,13 +63,12 @@ function calculateSatellitePosition(satData, date) {
     const positionEci = positionAndVelocity.position;
 
     // Scale factor for visualization (Earth radius is 1.0 in our scene)
-    const scaleFactor = 1.0 / 6371; // 6371 km is Earth's radius
 
     // Convert km to scene units and flip coordinates as needed for three.js
     return {
-      x: positionEci.x * scaleFactor,
-      y: positionEci.z * scaleFactor, // Flip y/z for three.js coordinate system
-      z: -positionEci.y * scaleFactor
+      x: positionEci.x * SCALE,
+      y: positionEci.z * SCALE, // Flip y/z for three.js coordinate system
+      z: -positionEci.y * SCALE
     };
   } catch (error) {
     console.error("Error calculating position for satellite:", satData.OBJECT_NAME, error);
@@ -99,12 +101,11 @@ function calculateTrajectory(data) {
 
       if (positionAndVelocity.position) {
         const positionEci = positionAndVelocity.position;
-        const scaleFactor = 1.0 / 6371; // Same scale as main visualization
 
         trajectoryPoints.push({
-          x: positionEci.x * scaleFactor,
-          y: positionEci.z * scaleFactor, // Flip y/z for three.js
-          z: -positionEci.y * scaleFactor
+          x: positionEci.x * SCALE,
+          y: positionEci.z * SCALE, // Flip y/z for three.js
+          z: -positionEci.y * SCALE
         });
       }
     }

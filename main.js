@@ -1,3 +1,5 @@
+import * as config from "./config.js";
+
 // Add satellite info display element to DOM
 const infoDiv = document.createElement("div");
 infoDiv.id = "satelliteInfo";
@@ -27,7 +29,7 @@ document.body.appendChild(renderer.domElement);
 
 // Starfield setup
 const starTexture = textureLoader.load("assets/universe.png");
-const starGeometry = new THREE.SphereGeometry(50000, 64, 64); // Large sphere
+const starGeometry = new THREE.SphereGeometry(config.STARFIELD_SPHERE_RADIUS, config.PLANET_GEOMETRY_DETAIL, config.PLANET_GEOMETRY_DETAIL); // Large sphere
 const starMaterial = new THREE.MeshBasicMaterial({
   map: starTexture,
   side: THREE.BackSide, // Render texture inside the sphere
@@ -36,22 +38,19 @@ const starField = new THREE.Mesh(starGeometry, starMaterial);
 scene.add(starField);
 
 // --- Sun setup ---
-const SUN_DISTANCE = 23481; // 1 AU / 6371
-const SUN_SIZE = 109; // sun radius / 6371 (~109x size of earth)
-
-const sunGeometry = new THREE.SphereGeometry(SUN_SIZE, 32, 32);
+const sunGeometry = new THREE.SphereGeometry(config.SUN_RADIUS, config.SUN_GEOMETRY_DETAIL / 2, config.SUN_GEOMETRY_DETAIL / 2);
 const sunTexture = textureLoader.load("assets/sun.jpg");
 const sunMaterial = new THREE.MeshBasicMaterial({
   map: sunTexture,
 });
 const sun = new THREE.Mesh(sunGeometry, sunMaterial);
 
-sun.position.set(SUN_DISTANCE, 0, 0); // Sun in +X direction, adjust as needed
+sun.position.set(config.SUN_DISTANCE, 0, 0); // Sun in +X direction, adjust as needed
 
 scene.add(sun);
 
 const sunlight = new THREE.DirectionalLight(0xffffff, 1.5);
-sunlight.position.set(SUN_DISTANCE, 0, 0); // Same as Sun's position
+sunlight.position.set(config.SUN_DISTANCE, 0, 0); // Same as Sun's position
 sunlight.castShadow = true; // Enable shadows (optional)
 scene.add(sunlight);
 
@@ -138,7 +137,7 @@ const earthMaterial = new THREE.ShaderMaterial({
     `,
   vertexColors: true,
 });
-const earthGeometry = new THREE.SphereGeometry(1, 64, 64); // Increased segments for smoother sphere
+const earthGeometry = new THREE.SphereGeometry(1, config.PLANET_GEOMETRY_DETAIL, config.PLANET_GEOMETRY_DETAIL); // Increased segments for smoother sphere
 const earth = new THREE.Mesh(earthGeometry, earthMaterial);
 earth.rotation.z = THREE.MathUtils.degToRad(23.5); // tilt at 23.5 deg
 
@@ -169,13 +168,13 @@ let highlightedIndex = -1;
 let selectedSatellite = null;
 let selectedIndex = -1;
 
-raycaster.params.Points.threshold = 0.02;
+raycaster.params.Points.threshold = config.RAYCASTER_POINT_THRESHOLD;
 
 // --- Satellite Data and Rendering Placeholder ---
 let tleData = []; // Initialize as empty array
 let satellites;
 let satGeometry;
-const MAX_SATELLITES = 20000; // Pre-allocated buffer size
+const MAX_SATELLITES = config.MAX_SATELLITES; // Pre-allocated buffer size
 let satelliteCount = 0; // Track how many satellites are actually loaded
 
 const positions = new Float32Array(MAX_SATELLITES * 3); // x, y, z for each
@@ -455,6 +454,8 @@ function requestTrajectory(satelliteIndex) {
 // Function to clear trajectory when not hovering
 function clearTrajectory() {
   if (currentTrajectory) {
+    currentTrajectory.geometry.dispose(); // Dispose geometry
+    currentTrajectory.material.dispose(); // Dispose material
     scene.remove(currentTrajectory);
     currentTrajectory = null;
   }
@@ -463,6 +464,8 @@ function clearTrajectory() {
 
 function clearSelectedTrajectory() {
   if (selectedTrajectory) {
+    selectedTrajectory.geometry.dispose(); // Dispose geometry
+    selectedTrajectory.material.dispose(); // Dispose material
     scene.remove(selectedTrajectory);
     selectedTrajectory = null;
   }
@@ -667,6 +670,25 @@ function animate() {
 
   // Update time display regardless
   document.getElementById("time").textContent = currentTime.toUTCString();
+
+  // --- Earth Rotation ---
+  // Calculate Earth's rotation based on the current time
+  const hours = currentTime.getUTCHours();
+  const minutes = currentTime.getUTCMinutes();
+  const seconds = currentTime.getUTCSeconds();
+  const milliseconds = currentTime.getUTCMilliseconds();
+
+  // Calculate fraction of the day elapsed in UTC (0 to 1)
+  const fractionOfDay = (hours + minutes / 60 + seconds / 3600 + milliseconds / 3600000) / 24;
+
+  // Calculate rotation angle in radians (2 * PI for a full rotation)
+  // Assuming 0 rotation corresponds to midnight UTC, prime meridian facing away from the sun direction along the Z-axis perhaps.
+  // Rotation increases eastward.
+  const earthRotationY = fractionOfDay * 2 * Math.PI;
+
+  // Apply the rotation around the Y axis (axis of rotation)
+  earth.rotation.y = earthRotationY;
+  // Note: The existing earth.rotation.z sets the axial tilt.
 
   controls.update(); // required if controls.enableDamping or controls.autoRotate are set to true
   renderer.render(scene, camera);
