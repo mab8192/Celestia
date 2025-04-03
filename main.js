@@ -5,7 +5,6 @@ import {
   getEarth,
   getMoon,
   getSun,
-  getMoonPosition,
   getMercury,
   getVenus,
   getMars,
@@ -15,6 +14,7 @@ import {
   getNeptune,
   getPluto,
 } from "./celestial.js";
+import { getPlanetPosition, getMoonPosition } from "./orbits.js";
 
 const satelliteInfoPanel = document.getElementById("satelliteInfo");
 const selectedSatelliteInfoPanel = document.getElementById(
@@ -32,7 +32,9 @@ const camera = new THREE.PerspectiveCamera(
   100000000
 );
 
-const renderer = new THREE.WebGLRenderer({ antialias: true }); // Added antialias for smoother edges
+const renderer = new THREE.WebGLRenderer({
+  antialias: true,
+}); // Added antialias for smoother edges
 renderer.setSize(window.innerWidth, window.innerHeight);
 document.body.appendChild(renderer.domElement);
 
@@ -76,14 +78,16 @@ scene.add(pluto);
 // --- Camera controls ---
 const controls = new THREE.OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
-controls.dampingFactor = 0.05;
+controls.dampingFactor = 0.1;
 controls.target.set(0, 0, 0);
 controls.enablePan = false;
-controls.minDistance = 1.5;
-controls.maxDistance = 500;
-camera.position.x = 10;
-camera.position.y = 10;
-camera.position.z = 10;
+controls.minDistance = config.SUN_RADIUS * config.CAMERA_MIN_DISTANCE_FACTOR;
+controls.maxDistance = config.SUN_RADIUS * config.CAMERA_MAX_DISTANCE_FACTOR;
+controls.zoomSpeed = 0.5;
+controls.rotateSpeed = 0.5;
+camera.position.x = 50;
+camera.position.y = 50;
+camera.position.z = 50;
 
 // --- Raycasting and Interaction ---
 const raycaster = new THREE.Raycaster();
@@ -93,28 +97,30 @@ let highlightedIndex = -1;
 let selectedSatellite = null;
 let selectedIndex = -1;
 
-raycaster.params.Points.threshold = config.RAYCASTER_POINT_THRESHOLD;
-
 // --- Satellite Data and Rendering Placeholder ---
 let tleData = []; // Initialize as empty array
 let satellites;
-let satGeometry;
 let satelliteCount = 0; // Track how many satellites are actually loaded
 
-const positions = new Float32Array(config.MAX_SATELLITES * 3); // x, y, z for each
-positions.fill(0.0);
-
-satGeometry = new THREE.BufferGeometry();
-satGeometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-
-const satMaterial = new THREE.PointsMaterial({
-  size: 0.02,
-  color: 0xffffff,
-  sizeAttenuation: true, // Points get smaller further away
+// Create an instanced mesh for satellites instead of points
+const satelliteGeometry = new THREE.SphereGeometry(0.005, 16, 16); // Small sphere
+const satelliteMaterial = new THREE.MeshBasicMaterial({
+  color: 0xffffff
 });
 
-satellites = new THREE.Points(satGeometry, satMaterial);
-scene.add(satellites); // Add the empty container to the scene
+// Create instance mesh with maximum capacity
+const MAX_INSTANCES = config.MAX_SATELLITES;
+satellites = new THREE.InstancedMesh(
+  satelliteGeometry,
+  satelliteMaterial,
+  MAX_INSTANCES
+);
+satellites.instanceMatrix.setUsage(THREE.DynamicDrawUsage); // Allow updates
+satellites.count = 0; // No instances yet
+scene.add(satellites);
+
+// Matrix for position updates
+const satelliteMatrix = new THREE.Matrix4();
 
 // --- Trajectories ---
 let currentTrajectory = null; // Track the trajectory for the currently highlighted object
@@ -139,6 +145,12 @@ worker.onmessage = (e) => {
     trajectoryPoints,
   } = e.data;
 
+  const earthPos = earth.position;
+
+  // Temporary vectors for calculations
+  const satEciKm = new THREE.Vector3();
+  const satEclipticKm = new THREE.Vector3();
+
   if (type === "POSITIONS_UPDATE") {
     // Ensure we don't write past the buffer
     if (startIndex + count > config.MAX_SATELLITES) {
@@ -146,59 +158,61 @@ worker.onmessage = (e) => {
       return;
     }
 
-    // Update the positions buffer at the correct offset
-    const positionsArray = satGeometry.attributes.position.array;
+    // Update instance matrices for each satellite
     for (let i = 0; i < count; i++) {
-      const bufferIndex = (startIndex + i) * 3;
-      positionsArray[bufferIndex] = batchPositions[i].x;
-      positionsArray[bufferIndex + 1] = batchPositions[i].y;
-      positionsArray[bufferIndex + 2] = batchPositions[i].z;
+      const instanceIndex = startIndex + i;
+
+      // Set position (relative to Earth)
+      satelliteMatrix.makeTranslation(
+        batchPositions[i].x + earthPos.x,
+        batchPositions[i].y + earthPos.y,
+        batchPositions[i].z + earthPos.z
+      );
+
+      // Apply to the instanced mesh
+      satellites.setMatrixAt(instanceIndex, satelliteMatrix);
     }
 
-    // Mark the buffer segment as needing update
-    satGeometry.attributes.position.needsUpdate = true;
+    // Ensure matrix updates are applied
+    satellites.instanceMatrix.needsUpdate = true;
 
-    // Update draw range and count
+    // Update total count if needed
     const newTotalCount = startIndex + count;
-    if (newTotalCount > satGeometry.drawRange.count) {
-      satGeometry.setDrawRange(0, newTotalCount);
+    if (newTotalCount > satellites.count) {
+      satellites.count = newTotalCount;
       satelliteCount = newTotalCount;
-    }
-
-    // Update bounding sphere
-    satGeometry.computeBoundingSphere();
-
-    // If this message contains the last batch of the initial load
-    if (!initialDataLoaded && satelliteCount === tleData.length) {
-      initialDataLoaded = true;
-      console.log(`Finished loading initial ${satelliteCount} satellites.`);
     }
 
     // Update selected/highlighted satellite info panel and marker positions
     if (selectedIndex !== -1) {
       displayInfoPanel(selectedIndex, selectedSatelliteInfoPanel);
       if (selectedSatellite) {
-        // Ensure marker exists
-        selectedSatellite.position.set(
-          positionsArray[selectedIndex * 3],
-          positionsArray[selectedIndex * 3 + 1],
-          positionsArray[selectedIndex * 3 + 2]
-        );
+        // Get position from instanced mesh
+        satellites.getMatrixAt(selectedIndex, satelliteMatrix);
+        const position = new THREE.Vector3();
+        position.setFromMatrixPosition(satelliteMatrix);
+        selectedSatellite.position.copy(position);
       }
     }
     if (highlightedIndex !== -1) {
       // Update marker position, but info panel is handled by hover
       if (highlightedSatellite) {
-        // Ensure marker exists
-        highlightedSatellite.position.set(
-          positionsArray[highlightedIndex * 3],
-          positionsArray[highlightedIndex * 3 + 1],
-          positionsArray[highlightedIndex * 3 + 2]
-        );
+        // Get position from instanced mesh
+        satellites.getMatrixAt(highlightedIndex, satelliteMatrix);
+        const position = new THREE.Vector3();
+        position.setFromMatrixPosition(satelliteMatrix);
+        highlightedSatellite.position.copy(position);
       }
     }
   } else if (type === "TRAJECTORY_DATA") {
     // Received orbital trajectory data
+
+    // Move trajectory points so they're around earth
+    trajectoryPoints.forEach((point) => {
+      point.x += earthPos.x;
+      point.y += earthPos.y;
+      point.z += earthPos.z;
+    });
 
     if (satelliteIndex === selectedIndex) {
       // Trajectory is for the currently SELECTED satellite
@@ -225,10 +239,6 @@ worker.onmessage = (e) => {
         config.HIGHLIGHT_COLOR
       ); // Use highlight color
       scene.add(currentTrajectory);
-    } else {
-      // Trajectory data arrived, but the user is no longer hovering over (or selecting)
-      // the satellite it was requested for. Discard the data.
-      // console.log(`Discarding stale trajectory data for index ${satelliteIndex}`);
     }
   }
 };
@@ -373,8 +383,6 @@ async function initTLEs() {
 
     // Initial position calculation
     updatePositions();
-
-    initialDataLoaded = true; // Mark initial data as loaded
   } catch (error) {
     console.error("Error initializing satellites:", error);
   }
@@ -470,15 +478,83 @@ function displayInfoPanel(index, panelElement) {
   }
 }
 
-// Function to request position updates from the worker
 function updatePositions() {
+  // --- Update Celestial Body Positions using orbits.js ---
+  const scaleFactor = config.AU * config.SCALE; // Combined factor: AU -> km -> scene scale
+
+  // Calculate positions (AU, Heliocentric Ecliptic)
+  const mercuryPosAU = getPlanetPosition("mercury", currentTime);
+  const venusPosAU = getPlanetPosition("venus", currentTime);
+  const earthPosAU = getPlanetPosition("earth", currentTime);
+  const marsPosAU = getPlanetPosition("mars", currentTime);
+  const jupiterPosAU = getPlanetPosition("jupiter", currentTime);
+  const saturnPosAU = getPlanetPosition("saturn", currentTime);
+  const uranusPosAU = getPlanetPosition("uranus", currentTime);
+  const neptunePosAU = getPlanetPosition("neptune", currentTime);
+  const plutoPosAU = getPlanetPosition("pluto", currentTime); // Note: Pluto needs appropriate elements
+  const moonPosAU = getMoonPosition(currentTime, earthPosAU); // Pass Earth's pos
+
+  // Apply scaled positions to meshes
+  mercury.position.copy(mercuryPosAU).multiplyScalar(scaleFactor);
+  venus.position.copy(venusPosAU).multiplyScalar(scaleFactor);
+  earth.position.copy(earthPosAU).multiplyScalar(scaleFactor);
+  mars.position.copy(marsPosAU).multiplyScalar(scaleFactor);
+  jupiter.position.copy(jupiterPosAU).multiplyScalar(scaleFactor);
+  saturn.position.copy(saturnPosAU).multiplyScalar(scaleFactor);
+  uranus.position.copy(uranusPosAU).multiplyScalar(scaleFactor);
+  neptune.position.copy(neptunePosAU).multiplyScalar(scaleFactor);
+  pluto.position.copy(plutoPosAU).multiplyScalar(scaleFactor);
+  moon.position.copy(moonPosAU).multiplyScalar(scaleFactor);
+
+  // --- Update Axial Rotations ---
+  // Earth rotation based on GMST, adjusted for initial texture alignment (+Z axis)
+  const gmst = satellite.gstime(currentTime);
+  earth.rotation.y = gmst + Math.PI / 2;
+
+  // Approximate rotations for other planets (can be refined with precise periods)
+  // Calculate rotation based on elapsed time since an arbitrary epoch (e.g., J2000)
+  const J2000 = new Date(Date.UTC(2000, 0, 1, 12, 0, 0));
+  const elapsedDays =
+    (currentTime.getTime() - J2000.getTime()) / (1000 * 60 * 60 * 24);
+
+  // Rotation = (elapsedDays / siderealPeriodDays) * 2 * PI
+  // Note: Need to check initial tilt axes in celestial.js for consistency
+  mercury.rotation.y = (elapsedDays / 58.65) * 2 * Math.PI;
+  venus.rotation.y = (elapsedDays / -243.02) * 2 * Math.PI; // Retrograde
+  mars.rotation.y = (elapsedDays / 1.026) * 2 * Math.PI;
+  jupiter.rotation.y = (elapsedDays / 0.414) * 2 * Math.PI;
+  saturn.rotation.y = (elapsedDays / 0.444) * 2 * Math.PI;
+  uranus.rotation.y = (elapsedDays / -0.718) * 2 * Math.PI; // Retrograde
+  neptune.rotation.y = (elapsedDays / 0.671) * 2 * Math.PI;
+  pluto.rotation.y = (elapsedDays / -6.387) * 2 * Math.PI; // Retrograde (Dwarf Planet)
+
+  // Moon: Tidal locking - always face Earth
+  // Need to handle the case where moon and earth are at the same position briefly during setup
+  if (!moon.position.equals(earth.position)) {
+    // Calculate the direction vector from Moon to Earth
+    const lookTarget = new THREE.Vector3().subVectors(
+      earth.position,
+      moon.position
+    );
+    // Create a quaternion representing the rotation to look at the target
+    const quaternion = new THREE.Quaternion();
+    // Assuming the Moon's "face" (texture front) is along its +Z axis initially.
+    // We need to adjust the 'up' vector if the default lookAt causes unwanted roll.
+    // A common 'up' is the world Y axis, but might need adjustment based on orbital plane.
+    // For simplicity, let's use the world Y axis first.
+    const up = new THREE.Vector3(0, 1, 0); // World Y axis
+    quaternion.setFromUnitVectors(
+      new THREE.Vector3(0, 0, 1),
+      lookTarget.normalize()
+    );
+    moon.setRotationFromQuaternion(quaternion);
+  }
+
+  // --- End Celestial Body Updates ---
+
+  // --- Request satellite position updates from the worker ---
   // Only send data if we actually have TLEs loaded
   if (tleData && tleData.length > 0) {
-    // console.log( // Reduce console noise
-    //   `Requesting position update for ${
-    //     tleData.length
-    //   } satellites at time: ${currentTime.toISOString()}`
-    // );
     // Send the *entire* current TLE dataset and the desired time
     // The worker will process this and send back results incrementally
     worker.postMessage({
@@ -486,8 +562,6 @@ function updatePositions() {
       tleData: tleData, // Send the full data set
       time: currentTime.toISOString(), // Send time as ISO string
     });
-  } else {
-    // console.log("Skipping position update: TLE data not yet loaded.");
   }
 }
 
@@ -541,17 +615,19 @@ function highlightSatellite(index) {
   highlightedSatellite = new THREE.Mesh(highlightGeometry, highlightMaterial);
 
   // Position the highlight at the satellite position
-  const satPosition = new THREE.Vector3(
-    satGeometry.attributes.position.array[index * 3],
-    satGeometry.attributes.position.array[index * 3 + 1],
-    satGeometry.attributes.position.array[index * 3 + 2]
-  );
+  satellites.getMatrixAt(index, satelliteMatrix);
+  const satPosition = new THREE.Vector3();
+  satPosition.setFromMatrixPosition(satelliteMatrix);
   highlightedSatellite.position.copy(satPosition);
 
   scene.add(highlightedSatellite);
 
   // Update the satellite info display using the specific panel
   displayInfoPanel(index, satelliteInfoPanel);
+
+  // --- ADDED: Update marker position immediately on highlight/select ---
+  // This ensures the marker appears instantly before the worker responds
+  updateMarkerPosition(highlightedSatellite, index);
 }
 
 function resetHighlight() {
@@ -586,11 +662,9 @@ function selectSatellite(index) {
   selectedSatellite = new THREE.Mesh(selectionGeometry, selectionMaterial);
 
   // Position the selection marker at the satellite position
-  const satPosition = new THREE.Vector3(
-    satGeometry.attributes.position.array[index * 3],
-    satGeometry.attributes.position.array[index * 3 + 1],
-    satGeometry.attributes.position.array[index * 3 + 2]
-  );
+  satellites.getMatrixAt(index, satelliteMatrix);
+  const satPosition = new THREE.Vector3();
+  satPosition.setFromMatrixPosition(satelliteMatrix);
   selectedSatellite.position.copy(satPosition);
 
   scene.add(selectedSatellite);
@@ -601,6 +675,10 @@ function selectSatellite(index) {
   satelliteInfoPanel.style.display = "none";
 
   requestTrajectory(selectedIndex);
+
+  // --- ADDED: Update marker position immediately on highlight/select ---
+  // This ensures the marker appears instantly before the worker responds
+  updateMarkerPosition(selectedSatellite, index);
 }
 
 function clearSelection() {
@@ -612,6 +690,17 @@ function clearSelection() {
     selectedSatelliteInfoPanel.style.display = "none";
     // Also hide hover trajectory (if any) associated with previous selection hover
     clearSelectedTrajectory();
+  }
+}
+
+// --- ADDED: Helper function to update marker positions ---
+// Reads the current position from the buffer
+function updateMarkerPosition(markerMesh, satelliteIndex) {
+  if (markerMesh && satelliteIndex >= 0 && satelliteIndex < satelliteCount) {
+    satellites.getMatrixAt(satelliteIndex, satelliteMatrix);
+    const position = new THREE.Vector3();
+    position.setFromMatrixPosition(satelliteMatrix);
+    markerMesh.position.copy(position);
   }
 }
 
@@ -664,13 +753,13 @@ function onMouseMove(event) {
   raycaster.setFromCamera(mouse, camera);
 
   // Calculate objects intersecting the picking ray
-  const intersects = raycaster.intersectObjects([satellites, earth]);
+  const intersects = raycaster.intersectObjects([satellites, earth], true);
 
   let currentHoverIndex = -1; // Track index hovered this frame
 
-  if (intersects.length > 0 && intersects[0].object != earth) {
-    // We hit a satellite
-    const index = intersects[0].index;
+  if (intersects.length > 0 && intersects[0].object !== earth) {
+    // We hit a satellite - instanced meshes return instanceId
+    const index = intersects[0].instanceId;
     currentHoverIndex = index;
 
     // Only process if it's a different satellite than currently highlighted
@@ -724,15 +813,62 @@ document.addEventListener("keydown", (event) => {
   }
 });
 
-let lastUpdateTime = new Date();
+/** Recenter the entire scene so that newCenter is at 0, 0, 0 */
+function recenterScene(newCenter) {
+  // Calculate the offset needed to move newCenter to origin
+  const offset = new THREE.Vector3();
+  offset.copy(newCenter).negate();
 
-// --- Animation loop ---
-const initialMoonFaceDirection = new THREE.Vector3(0, 0, -1); // Assume texture faces -Z locally
-const rotationQuaternion = new THREE.Quaternion();
-const earthDirection = new THREE.Vector3();
+  // Move all celestial bodies
+  sun.position.add(offset);
+  sunlight.position.add(offset);
+  mercury.position.add(offset);
+  venus.position.add(offset);
+  earth.position.add(offset);
+  moon.position.add(offset);
+  mars.position.add(offset);
+  jupiter.position.add(offset);
+  saturn.position.add(offset);
+  uranus.position.add(offset);
+  neptune.position.add(offset);
+  pluto.position.add(offset);
+
+  // Move all satellites
+  const tempMatrix = new THREE.Matrix4();
+  for (let i = 0; i < satelliteCount; i++) {
+    satellites.getMatrixAt(i, tempMatrix);
+    const position = new THREE.Vector3();
+    position.setFromMatrixPosition(tempMatrix);
+    position.add(offset);
+    tempMatrix.setPosition(position);
+    satellites.setMatrixAt(i, tempMatrix);
+  }
+  satellites.instanceMatrix.needsUpdate = true;
+
+  // Update highlighted and selected satellite positions if they exist
+  if (highlightedSatellite) {
+    highlightedSatellite.position.add(offset);
+  }
+  if (selectedSatellite) {
+    selectedSatellite.position.add(offset);
+  }
+
+  // Update trajectories if they exist
+  if (currentTrajectory) {
+    currentTrajectory.position.add(offset);
+  }
+  if (selectedTrajectory) {
+    selectedTrajectory.position.add(offset);
+  }
+
+  // Update camera position and controls target
+  camera.position.add(offset);
+  controls.target.add(offset);
+  controls.update();
+}
 
 // --- Camera Target Tracking ---
-let cameraTargetObject = earth; // Default target is Earth
+let cameraTargetObject = sun; // Default target is Earth
 const targetObjects = {
   // Map for easy lookup
   sun: sun,
@@ -745,7 +881,7 @@ const targetObjects = {
   saturn: saturn,
   uranus: uranus,
   neptune: neptune,
-  pluto: pluto
+  pluto: pluto,
 };
 const targetButtons = document.querySelectorAll("#target-controls button");
 
@@ -766,39 +902,20 @@ function setCameraTarget(targetName) {
     });
 
     // Adjust camera distance based on target for better initial view (optional)
-    let newDistance = 3; // Default for Earth
-    if (cameraTargetObject === moon) {
-      newDistance = config.MOON_RADIUS * 3;
-    } else if (cameraTargetObject === sun) {
-      newDistance = config.SUN_RADIUS * 3;
-    } else if (cameraTargetObject === mercury) {
-      newDistance = config.MERCURY_RADIUS * 3;
-    } else if (cameraTargetObject === venus) {
-      newDistance = config.VENUS_RADIUS * 3;
-    } else if (cameraTargetObject === mars) {
-      newDistance = config.MARS_RADIUS * 3;
-    } else if (cameraTargetObject === jupiter) {
-      newDistance = config.JUPITER_RADIUS * 3;
-    } else if (cameraTargetObject === saturn) {
-      newDistance = config.SATURN_RADIUS * 3;
-    } else if (cameraTargetObject === uranus) {
-      newDistance = config.URANUS_RADIUS * 3;
-    } else if (cameraTargetObject === neptune) {
-      newDistance = config.NEPTUNE_RADIUS * 3;
-    } else if (cameraTargetObject === pluto) {
-      newDistance = config.PLUTO_RADIUS * 3;
-    }
+    const objRadius = cameraTargetObject.geometry.boundingSphere.radius;
+    const newDistance = objRadius * 3;
 
     // Smoothly move camera - more complex, requires tweening library or manual lerp
     // For simplicity, just set the controls target directly (will jump)
     controls.target.copy(cameraTargetObject.position);
-    controls.minDistance = newDistance / 2; // Adjust min/max distance too
-    controls.maxDistance = newDistance * 10;
+    controls.minDistance = objRadius * config.CAMERA_MIN_DISTANCE_FACTOR; // Adjust min/max distance too
+    controls.maxDistance = objRadius * config.CAMERA_MAX_DISTANCE_FACTOR;
     camera.position.set(
       cameraTargetObject.position.x + newDistance,
       cameraTargetObject.position.y + newDistance / 2,
       cameraTargetObject.position.z + newDistance
     ); // Reposition camera
+    recenterScene(cameraTargetObject.position);
   }
 }
 
@@ -811,14 +928,13 @@ targetButtons.forEach((button) => {
 
 // Set initial active button state
 document
-  .querySelector('#target-controls button[data-target="earth"]')
+  .querySelector('#target-controls button[data-target="sun"]')
   .classList.add("active");
 
-function animate() {
-  requestAnimationFrame(animate);
-
-  const elapsedSeconds = performance.now() / 1000.0; // Get elapsed time in seconds
-  earthMaterial.uniforms.time.value = elapsedSeconds; // Update shader time uniform
+let lastUpdateTime = new Date();
+function update() {
+  // Update controls
+  controls.update();
 
   // Update positions and selected info if in real-time mode
   if (isRealTime) {
@@ -833,78 +949,35 @@ function animate() {
       updatePositions();
       lastUpdateTime = now;
     }
+  } else if (currentTime != lastUpdateTime) {
+    updatePositions();
+    lastUpdateTime = currentTime;
   }
+}
 
-  // --- Moon Position Update ---
-  const moonPosKm = getMoonPosition(currentTime);
-  moon.position.set(
-    moonPosKm.x * config.SCALE, // Scene X = ECI X
-    moonPosKm.z * config.SCALE, // Scene Y (up) = ECI Z (north/south)
-    -moonPosKm.y * config.SCALE // Scene Z = -ECI Y
-  );
-
-  // --- Moon Rotation (Tidal Lock) ---
-  // 1. Calculate direction from Moon to Earth (origin)
-  earthDirection.copy(moon.position).negate().normalize();
-
-  // 2. Calculate rotation needed to align Moon's initial face (-Z) with Earth direction
-  rotationQuaternion.setFromUnitVectors(
-    initialMoonFaceDirection,
-    earthDirection
-  );
-
-  // 3. Apply the rotation
-  moon.quaternion.copy(rotationQuaternion);
-
-  // Update position of the highlighted satellite mesh if it exists
-  if (
-    highlightedSatellite &&
-    highlightedIndex >= 0 &&
-    highlightedIndex < satelliteCount
-  ) {
-    highlightedSatellite.position.set(
-      satGeometry.attributes.position.array[highlightedIndex * 3],
-      satGeometry.attributes.position.array[highlightedIndex * 3 + 1],
-      satGeometry.attributes.position.array[highlightedIndex * 3 + 2]
-    );
-  }
-
-  // Update position of the selected satellite mesh if it exists
-  if (
-    selectedSatellite &&
-    selectedIndex >= 0 &&
-    selectedIndex < satelliteCount
-  ) {
-    selectedSatellite.position.set(
-      satGeometry.attributes.position.array[selectedIndex * 3],
-      satGeometry.attributes.position.array[selectedIndex * 3 + 1],
-      satGeometry.attributes.position.array[selectedIndex * 3 + 2]
-    );
-  }
-
-  // Update time display regardless
+function render() {
   document.getElementById("time").textContent = currentTime.toLocaleString();
 
-  // --- Earth Rotation ---
-  // Calculate GMST angle in radians
-  const gmst = satellite.gstime(currentTime);
-  // Apply rotation. The texture center (0 deg lon) should align with the meridian indicated by GMST.
-  // If the texture center (u=0.5) initially aligns with +Z, a rotation of `gmst` radians
-  // around the Y-axis will position the 0-degree meridian correctly relative to the ECI frame.
-  // We might need a small offset depending on the initial texture mapping orientation.
-  // Let's start with just GMST.
-  earth.rotation.y = gmst;
+  // Update Earth shader uniforms for correct lighting and cloud animation
+  if (earth.material.uniforms) {
+    // Check if uniforms exist
+    // Sun's world position (scene origin)
+    const sunWorldPosition = sun.position;
+    earth.material.uniforms.sunPosition.value.copy(sunWorldPosition);
 
-  // Update Sun position
-  sunlight.position.copy(sun.position);
-
-  // --- Update Camera Target ---
-  if (cameraTargetObject) {
-    controls.target.copy(cameraTargetObject.position);
+    // Time for cloud animation
+    earth.material.uniforms.time.value = performance.now() / 1000.0;
   }
 
-  controls.update();
   renderer.render(scene, camera);
+}
+
+// --- Animation Loop ---
+function animate() {
+  update();
+  render();
+
+  requestAnimationFrame(animate);
 }
 
 // --- Start the application ---
