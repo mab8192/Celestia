@@ -1,24 +1,36 @@
-// Import satellite.js using importScripts
-importScripts('https://cdnjs.cloudflare.com/ajax/libs/satellite.js/4.0.0/satellite.min.js');
+importScripts(
+  "https://cdnjs.cloudflare.com/ajax/libs/satellite.js/4.0.0/satellite.min.js"
+);
 
 // Configuration constant (replace import)
-const SCALE = 1 / 6371; // Define SCALE directly, copied from config.js
+const SCALE = 1 / 6371; // Define SCALE directly, copied from config.js (can't import because reasons)
 
 // Set batch size for processing
 const BATCH_SIZE = 500;
 
 // Process messages from main thread
-onmessage = function(e) {
+onmessage = function (e) {
   const { type } = e.data;
 
-  if (type === 'CALCULATE_POSITIONS') {
+  if (type === "CALCULATE_POSITIONS") {
     calculatePositions(e.data);
-  } else if (type === 'CALCULATE_TRAJECTORY') {
+  } else if (type === "CALCULATE_TRAJECTORY") {
     calculateTrajectory(e.data);
   } else {
-    console.error("Invalid request type: " + type)
+    console.error("Invalid request type: " + type);
   }
 };
+
+// Helper function to get orbital period
+if (typeof satellite !== "undefined" && !satellite.getOrbitPeriod) {
+  satellite.getOrbitPeriod = function (satrec) {
+    // Get the mean motion in radians per minute
+    const meanMotion = satrec.no;
+
+    // Convert to orbital period in minutes
+    return meanMotion === 0 ? 0 : (2 * Math.PI) / meanMotion;
+  };
+}
 
 // Calculate positions for all satellites
 function calculatePositions(data) {
@@ -41,10 +53,10 @@ function calculatePositions(data) {
 
     // Return this batch of results
     postMessage({
-      type: 'POSITIONS_UPDATE',
+      type: "POSITIONS_UPDATE",
       batchPositions: batchPositions,
       startIndex: i,
-      count: batchPositions.length
+      count: batchPositions.length,
     });
   }
 }
@@ -52,26 +64,34 @@ function calculatePositions(data) {
 // Calculate a single satellite's position
 function calculateSatellitePosition(satData, date) {
   try {
-    const satrec = satellite.twoline2satrec(satData.TLE_LINE1, satData.TLE_LINE2);
+    const satrec = satellite.twoline2satrec(
+      satData.TLE_LINE1,
+      satData.TLE_LINE2
+    );
     const positionAndVelocity = satellite.propagate(satrec, date);
 
     // Check for error
-    if (typeof positionAndVelocity === 'string' || !positionAndVelocity.position) {
+    if (
+      typeof positionAndVelocity === "string" ||
+      !positionAndVelocity.position
+    ) {
       return { x: 0, y: 0, z: 0 }; // Return origin if error
     }
 
     const positionEci = positionAndVelocity.position;
 
-    // Scale factor for visualization (Earth radius is 1.0 in our scene)
-
     // Convert km to scene units and flip coordinates as needed for three.js
     return {
       x: positionEci.x * SCALE,
       y: positionEci.z * SCALE, // Flip y/z for three.js coordinate system
-      z: -positionEci.y * SCALE
+      z: -positionEci.y * SCALE,
     };
   } catch (error) {
-    console.error("Error calculating position for satellite:", satData.OBJECT_NAME, error);
+    console.error(
+      "Error calculating position for satellite:",
+      satData.OBJECT_NAME,
+      error
+    );
     return { x: 0, y: 0, z: 0 }; // Return origin if error
   }
 }
@@ -94,7 +114,9 @@ function calculateTrajectory(data) {
 
     for (let i = 0; i <= points; i++) {
       // Calculate time for this point
-      const pointTime = new Date(startDate.getTime() + i * timeStep * 60 * 1000);
+      const pointTime = new Date(
+        startDate.getTime() + i * timeStep * 60 * 1000
+      );
 
       // Calculate position
       const positionAndVelocity = satellite.propagate(satrec, pointTime);
@@ -105,35 +127,23 @@ function calculateTrajectory(data) {
         trajectoryPoints.push({
           x: positionEci.x * SCALE,
           y: positionEci.z * SCALE, // Flip y/z for three.js
-          z: -positionEci.y * SCALE
+          z: -positionEci.y * SCALE,
         });
       }
     }
 
     // Send complete trajectory back to main thread
     postMessage({
-      type: 'TRAJECTORY_DATA',
+      type: "TRAJECTORY_DATA",
       satelliteIndex: satelliteIndex,
-      trajectoryPoints: trajectoryPoints
+      trajectoryPoints: trajectoryPoints,
     });
-
   } catch (error) {
     console.error("Error calculating trajectory:", error);
     // Send back empty trajectory
     postMessage({
-      type: 'TRAJECTORY_DATA',
-      trajectoryPoints: []
+      type: "TRAJECTORY_DATA",
+      trajectoryPoints: [],
     });
   }
-}
-
-// Helper function to get orbital period
-if (!satellite.getOrbitPeriod) {
-  satellite.getOrbitPeriod = function(satrec) {
-    // Get the mean motion in radians per minute
-    const meanMotion = satrec.no;
-
-    // Convert to orbital period in minutes
-    return meanMotion === 0 ? 0 : (2 * Math.PI) / meanMotion;
-  };
 }

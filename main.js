@@ -1,19 +1,13 @@
 import * as config from "./config.js";
-
-// Get UI elements for search
-const searchInput = document.getElementById("searchInput");
-const searchButton = document.getElementById("searchButton");
+import { searchSatellite } from "./search.js";
+import { getStarfield, getEarth, getMoon, getSun, getMoonPosition } from "./celestial.js";
 
 const satelliteInfoPanel = document.getElementById("satelliteInfo");
 const selectedSatelliteInfoPanel = document.getElementById(
   "selectedSatelliteInfo"
 );
 
-// --- Autocomplete Variables ---
-const suggestionsContainer = document.getElementById(
-  "autocomplete-suggestions"
-);
-let activeSuggestionIndex = -1; // For keyboard navigation
+const searchButton = document.getElementById("searchButton");
 
 // Scene setup
 const scene = new THREE.Scene();
@@ -21,163 +15,25 @@ const camera = new THREE.PerspectiveCamera(
   60,
   window.innerWidth / window.innerHeight,
   0.1,
-  100000
+  10000000
 );
-const textureLoader = new THREE.TextureLoader();
+
 const renderer = new THREE.WebGLRenderer({ antialias: true }); // Added antialias for smoother edges
 renderer.setSize(window.innerWidth, window.innerHeight);
 document.body.appendChild(renderer.domElement);
 
-// Starfield setup
-const starTexture = textureLoader.load("assets/universe.png");
-const starGeometry = new THREE.SphereGeometry(
-  config.STARFIELD_SPHERE_RADIUS,
-  config.PLANET_GEOMETRY_DETAIL,
-  config.PLANET_GEOMETRY_DETAIL
-); // Large sphere
-const starMaterial = new THREE.MeshBasicMaterial({
-  map: starTexture,
-  side: THREE.BackSide, // Render texture inside the sphere
-});
-const starField = new THREE.Mesh(starGeometry, starMaterial);
-scene.add(starField);
+const starfield = getStarfield();
+scene.add(starfield);
 
-// --- Sun setup ---
-const sunGeometry = new THREE.SphereGeometry(
-  config.SUN_RADIUS,
-  config.SUN_GEOMETRY_DETAIL / 2,
-  config.SUN_GEOMETRY_DETAIL / 2
-);
-const sunTexture = textureLoader.load("assets/sun.jpg");
-const sunMaterial = new THREE.MeshBasicMaterial({
-  map: sunTexture,
-});
-const sun = new THREE.Mesh(sunGeometry, sunMaterial);
-
-sun.position.set(config.SUN_DISTANCE, 0, 0); // Sun in +X direction, adjust as needed
-
+const { sun, sunlight } = getSun();
 scene.add(sun);
-
-const sunlight = new THREE.DirectionalLight(0xffffff, 1.5);
 scene.add(sunlight);
 
-// --- Earth Setup ---
-const dayTexture = textureLoader.load("assets/earth.jpg");
-const nightTexture = textureLoader.load("assets/earth_night.jpg");
-const normalMap = textureLoader.load("assets/earth_normal.tif");
-const specularMap = textureLoader.load("assets/earth_specular.tif");
-const cloudTexture = textureLoader.load("assets/earth_clouds.jpg");
-cloudTexture.wrapS = THREE.RepeatWrapping; // Set horizontal wrapping to repeat
-cloudTexture.generateMipmaps = false; // Disable mipmaps
-cloudTexture.minFilter = THREE.LinearFilter; // Use linear filtering
-cloudTexture.magFilter = THREE.LinearFilter; // Use linear filtering
-
-const earthMaterial = new THREE.ShaderMaterial({
-  uniforms: {
-    dayTexture: { value: dayTexture },
-    nightTexture: { value: nightTexture },
-    normalMap: { value: normalMap },
-    specularMap: { value: specularMap },
-    cloudTexture: { value: cloudTexture },
-    sunPosition: { value: sun.position },
-    modelMatrix: { value: new THREE.Matrix4() },
-    cameraViewMatrix: { value: new THREE.Matrix4() },
-    time: { value: 0.0 }, // Add time uniform for cloud movement
-  },
-  vertexShader: `
-        varying vec2 vUv;
-        varying vec3 vNormal;
-        varying vec3 vWorldPosition;
-
-        void main() {
-            vUv = uv;
-            vNormal = normalize((modelMatrix * vec4(normal, 0.0)).xyz);
-            vWorldPosition = (modelMatrix * vec4(position, 1.0)).xyz;
-            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-        }
-    `,
-  fragmentShader: `
-        uniform sampler2D dayTexture;
-        uniform sampler2D nightTexture;
-        uniform sampler2D normalMap;
-        uniform sampler2D specularMap;
-        uniform sampler2D cloudTexture;
-        uniform vec3 sunPosition;
-        uniform mat4 modelMatrix;
-        uniform mat4 cameraViewMatrix;
-        uniform float time; // Time uniform
-
-        varying vec2 vUv;
-        varying vec3 vNormal;
-        varying vec3 vWorldPosition;
-
-        void main() {
-            // Calculate light direction in world space
-            vec3 lightDir = normalize(sunPosition - vWorldPosition);
-            float intensity = max(dot(vNormal, lightDir), 0.0);
-
-            // Blend between night and day textures
-            vec4 dayColor = texture2D(dayTexture, vUv);
-            vec4 nightColor = texture2D(nightTexture, vUv);
-            vec4 baseSurfaceColor = mix(nightColor, dayColor, intensity);
-
-            // Calculate cloud UVs using fract() for seamless wrapping
-            // Adjust the multiplier (0.005) for desired cloud speed
-            vec2 cloudUv = vec2(fract(vUv.x + time * 0.001), vUv.y);
-            vec4 cloudColorSample = texture2D(cloudTexture, cloudUv);
-
-            // Use the cloud texture's color intensity (e.g., red channel) as alpha
-            float cloudAlpha = cloudColorSample.r;
-
-            // Blend clouds over the surface color. Make clouds brighter on the lit side.
-            vec3 finalSurfaceColor = mix(baseSurfaceColor.rgb, vec3(1.0), cloudAlpha * intensity);
-
-            // Apply normal mapping (remains the same)
-            vec3 normalMapValue = texture2D(normalMap, vUv).xyz * 2.0 - 1.0;
-            float specular = 0.0;
-            if (intensity > 0.0) {
-                vec3 worldNormal = normalize(vNormal + normalMapValue.x * vec3(1.0, 0.0, 0.0) + normalMapValue.y * vec3(0.0, 1.0, 0.0));
-                vec3 viewDir = normalize(-vWorldPosition);
-                vec3 reflectDir = reflect(-lightDir, worldNormal);
-                float specularStrength = texture2D(specularMap, vUv).r;
-                specular = pow(max(dot(viewDir, reflectDir), 0.0), 32.0) * specularStrength;
-            }
-
-            // Final color: surface + clouds + specular
-            gl_FragColor = vec4(finalSurfaceColor + vec3(specular), 1.0);
-        }
-    `,
-  vertexColors: true,
-  transparent: false, // Clouds are blended in, base sphere is opaque
-});
-const earthGeometry = new THREE.SphereGeometry(
-  1,
-  config.PLANET_GEOMETRY_DETAIL,
-  config.PLANET_GEOMETRY_DETAIL
-); // Increased segments for smoother sphere
-const earth = new THREE.Mesh(earthGeometry, earthMaterial);
-earth.rotation.z = THREE.MathUtils.degToRad(23.5); // tilt at 23.5 deg
-
+const { earth, earthGeometry, earthMaterial } = getEarth();
 scene.add(earth);
 
-// --- Moon Setup ---
-const moonTexture = textureLoader.load("assets/moon.jpg");
-const moonGeometry = new THREE.SphereGeometry(
-  config.MOON_RADIUS,
-  config.MOON_GEOMETRY_DETAIL,
-  config.MOON_GEOMETRY_DETAIL
-);
-// Use MeshStandardMaterial for realistic lighting
-const moonMaterial = new THREE.MeshStandardMaterial({
-  map: moonTexture,
-  emissive: 0x111111,
-});
-const moon = new THREE.Mesh(moonGeometry, moonMaterial);
+const moon = getMoon();
 scene.add(moon);
-// We will set the position in the animate loop
-
-// Store the initial time to calculate orbital position relative to start
-const simulationStartTimeMs = Date.now();
 
 // --- Camera controls ---
 const controls = new THREE.OrbitControls(camera, renderer.domElement);
@@ -232,7 +88,7 @@ let isRealTime = false;
 let initialDataLoaded = false; // Flag to track if initial load is done
 
 // --- Web worker ---
-const worker = new Worker("worker.js");
+const worker = new Worker("propagation_worker.js");
 
 // Modified worker message handler
 worker.onmessage = (e) => {
@@ -313,7 +169,7 @@ worker.onmessage = (e) => {
         selectedTrajectory.material.dispose();
         scene.remove(selectedTrajectory);
       }
-      selectedTrajectory = buildTrajectoryLine(trajectoryPoints, 0xffaa00); // Use selection color
+      selectedTrajectory = buildTrajectoryLine(trajectoryPoints, config.SELECTION_COLOR); // Use selection color
       scene.add(selectedTrajectory);
     } else if (satelliteIndex === highlightedIndex) {
       // Trajectory is for the currently HIGHLIGHTED (hovered) satellite
@@ -323,7 +179,7 @@ worker.onmessage = (e) => {
         currentTrajectory.material.dispose();
         scene.remove(currentTrajectory);
       }
-      currentTrajectory = buildTrajectoryLine(trajectoryPoints, 0x00ffff); // Use highlight color
+      currentTrajectory = buildTrajectoryLine(trajectoryPoints, config.HIGHLIGHT_COLOR); // Use highlight color
       scene.add(currentTrajectory);
     } else {
       // Trajectory data arrived, but the user is no longer hovering over (or selecting)
@@ -421,139 +277,6 @@ async function fetchTLE() {
   }
 }
 
-// --- Autocomplete Functionality ---
-
-// Function to show suggestions
-function showSuggestions(matches) {
-  suggestionsContainer.innerHTML = ""; // Clear previous suggestions
-  if (matches.length === 0) {
-    suggestionsContainer.style.display = "none";
-    return;
-  }
-
-  matches.forEach((match, index) => {
-    const item = document.createElement("div");
-    item.classList.add("suggestion-item");
-    // Display both name and ID for clarity
-    item.textContent = `${match.sat.OBJECT_NAME} (${match.sat.NORAD_CAT_ID})`;
-    item.dataset.index = match.index; // Store original index
-
-    item.addEventListener("click", () => {
-      searchInput.value = match.sat.OBJECT_NAME; // Or NORAD ID if preferred
-      suggestionsContainer.style.display = "none";
-      searchSatellite(); // Trigger search immediately
-    });
-    suggestionsContainer.appendChild(item);
-  });
-
-  suggestionsContainer.style.display = "block";
-  activeSuggestionIndex = -1; // Reset keyboard selection
-}
-
-// Function to hide suggestions
-function hideSuggestions() {
-  // Use a slight delay to allow click events on suggestions to register
-  setTimeout(() => {
-    suggestionsContainer.style.display = "none";
-    activeSuggestionIndex = -1;
-  }, 100);
-}
-
-// Add input listener to search box
-searchInput.addEventListener("input", () => {
-  const query = searchInput.value.trim().toLowerCase();
-
-  if (query.length < 2 || !tleData || tleData.length === 0) {
-    hideSuggestions();
-    return;
-  }
-
-  const matches = tleData
-    .map((sat, index) => ({ sat, index })) // Keep original index
-    .filter(({ sat }) => {
-      const nameMatch =
-        sat.OBJECT_NAME && sat.OBJECT_NAME.toLowerCase().includes(query);
-      const noradIdMatch =
-        sat.NORAD_CAT_ID && String(sat.NORAD_CAT_ID).includes(query);
-      return nameMatch || noradIdMatch;
-    });
-
-  showSuggestions(matches);
-});
-
-// Add keyboard navigation listener
-searchInput.addEventListener("keydown", (e) => {
-  const items = suggestionsContainer.querySelectorAll(".suggestion-item");
-  if (suggestionsContainer.style.display !== "block" || items.length === 0) {
-    // If suggestions not visible or empty, handle Enter for normal search
-    if (e.key === "Enter") {
-      searchSatellite();
-      hideSuggestions(); // Hide in case it was briefly visible
-    }
-    return; // No suggestions to navigate
-  }
-
-  switch (e.key) {
-    case "ArrowDown":
-      e.preventDefault(); // Prevent cursor move
-      if (activeSuggestionIndex < items.length - 1) {
-        activeSuggestionIndex++;
-        updateActiveSuggestion(items);
-      }
-      break;
-    case "ArrowUp":
-      e.preventDefault(); // Prevent cursor move
-      if (activeSuggestionIndex > 0) {
-        activeSuggestionIndex--;
-        updateActiveSuggestion(items);
-      } else if (activeSuggestionIndex === 0) {
-        // Optional: Allow moving back to input (clear selection)
-        activeSuggestionIndex = -1;
-        updateActiveSuggestion(items);
-      }
-      break;
-    case "Enter":
-      e.preventDefault(); // Prevent form submission (if any)
-      if (activeSuggestionIndex >= 0 && activeSuggestionIndex < items.length) {
-        items[activeSuggestionIndex].click(); // Simulate click on active suggestion
-      } else {
-        searchSatellite(); // Perform normal search if no suggestion selected
-      }
-      hideSuggestions();
-      break;
-    case "Escape":
-      hideSuggestions();
-      break;
-  }
-});
-
-// Helper function to update the visual state of active suggestion
-function updateActiveSuggestion(items) {
-  items.forEach((item, index) => {
-    if (index === activeSuggestionIndex) {
-      item.classList.add("active");
-      // Optional: scroll into view if list is long
-      item.scrollIntoView({ block: "nearest" });
-    } else {
-      item.classList.remove("active");
-    }
-  });
-  // Update input value to reflect selection temporarily (optional)
-  // if (activeSuggestionIndex >= 0) {
-  //     searchInput.value = items[activeSuggestionIndex].textContent.split(' (')[0]; // Get name part
-  // }
-}
-
-// Hide suggestions when clicking outside
-document.addEventListener("click", (event) => {
-  if (
-    !searchInput.contains(event.target) &&
-    !suggestionsContainer.contains(event.target)
-  ) {
-    hideSuggestions();
-  }
-});
-
 // --- TLE Initialization (Asynchronous) ---
 async function initTLEs() {
   try {
@@ -608,9 +331,6 @@ async function initTLEs() {
     updatePositions();
 
     initialDataLoaded = true; // Mark initial data as loaded
-
-    // --- Event Listeners Setup --- (AFTER data is loaded)
-    searchButton.addEventListener("click", searchSatellite);
 
     // Keyboard listeners for searchInput (input, keydown) are added globally above
   } catch (error) {
@@ -732,10 +452,6 @@ function updatePositions() {
 // Function to request a satellite's trajectory from the worker
 function requestTrajectory(satelliteIndex) {
   if (tleData && tleData[satelliteIndex]) {
-    console.log(
-      `Requesting trajectory for satellite: ${tleData[satelliteIndex].OBJECT_NAME}`
-    );
-
     // Request trajectory calculation from worker
     worker.postMessage({
       type: "CALCULATE_TRAJECTORY",
@@ -941,150 +657,26 @@ function onMouseDown(event) {
   }
 }
 
-let lastUpdateTime = new Date();
-const updateIntervalMs = 500;
+searchButton.addEventListener("click", () => {
+  const foundIndex = searchSatellite(tleData);
 
-// --- Helper Functions ---
+  if (foundIndex !== -1) {
+    console.log(
+      `Found satellite: ${tleData[foundIndex].OBJECT_NAME} (Index: ${foundIndex})`
+    );
 
-/**
- * Calculates the Julian Day (JD) for a given JavaScript Date object.
- * JD is the number of days since noon Universal Time (UT) on January 1, 4713 BCE.
- */
-function calculateJulianDay(date) {
-  const year = date.getUTCFullYear();
-  const month = date.getUTCMonth() + 1; // JS months are 0-indexed
-  const day = date.getUTCDate();
-  const hours = date.getUTCHours();
-  const minutes = date.getUTCMinutes();
-  const seconds = date.getUTCSeconds();
-
-  const dayFraction = (hours + minutes / 60 + seconds / 3600) / 24;
-
-  if (month <= 2) {
-    year -= 1;
-    month += 12;
+    clearSelection();
+    selectSatellite(foundIndex);
+    requestTrajectory(foundIndex);
+    searchInput.value = "";
+  } else {
+    console.log(`Satellite matching "${searchTerm}" not found.`);
+    alert(`Satellite matching "${searchTerm}" not found.`);
+    clearSelection();
   }
+});
 
-  const A = Math.floor(year / 100);
-  const B = 2 - A + Math.floor(A / 4);
-  const JD =
-    Math.floor(365.25 * (year + 4716)) +
-    Math.floor(30.6001 * (month + 1)) +
-    day +
-    B -
-    1524.5;
-
-  return JD + dayFraction;
-}
-
-/**
- * Calculates approximate geocentric ECI position of the Moon.
- * Based on simplified algorithms (accuracy ~ arcminutes/few Earth radii).
- * @param {Date} date The date/time for which to calculate the position.
- * @returns {{x: number, y: number, z: number}} Geocentric ECI position in kilometers.
- */
-function getMoonPosition(date) {
-  const JD = calculateJulianDay(date);
-  const T = (JD - 2451545.0) / 36525; // Centuries since J2000.0
-
-  // --- Mean Elements (degrees) ---
-  const L0 =
-    218.3164477 +
-    481267.88123421 * T -
-    0.0015786 * T * T +
-    (T * T * T) / 538841 -
-    (T * T * T * T) / 65194000; // Mean longitude
-  const D =
-    297.8501921 +
-    445267.1114034 * T -
-    0.0018819 * T * T +
-    (T * T * T) / 545868 -
-    (T * T * T * T) / 113065000; // Mean elongation (Moon - Sun)
-  const M =
-    134.9633964 +
-    477198.8675055 * T +
-    0.0087414 * T * T +
-    (T * T * T) / 69699 -
-    (T * T * T * T) / 14712000; // Sun's mean anomaly
-  const M_prime =
-    357.5291092 +
-    35999.0502909 * T -
-    0.0001536 * T * T +
-    (T * T * T) / 24490000; // Moon's mean anomaly
-  const F =
-    93.272095 +
-    483202.0175233 * T -
-    0.0036539 * T * T -
-    (T * T * T) / 3526000 +
-    (T * T * T * T) / 863310000; // Argument of latitude
-
-  // Convert degrees to radians for trig functions
-  const L0_rad = THREE.MathUtils.degToRad(L0);
-  const D_rad = THREE.MathUtils.degToRad(D);
-  const M_rad = THREE.MathUtils.degToRad(M);
-  const M_prime_rad = THREE.MathUtils.degToRad(M_prime);
-  const F_rad = THREE.MathUtils.degToRad(F);
-
-  // --- Major Perturbation Terms (degrees) ---
-  // Longitude perturbations
-  let dL =
-    -1.274 * Math.sin(M_prime_rad - 2 * D_rad) +
-    0.658 * Math.sin(2 * D_rad) -
-    0.186 * Math.sin(M_prime_rad) -
-    0.059 * Math.sin(2 * M_prime_rad - 2 * D_rad) -
-    0.057 * Math.sin(M_prime_rad + 2 * D_rad) +
-    0.053 * Math.sin(M_prime_rad - 2 * D_rad + M_rad) +
-    0.046 * Math.sin(2 * D_rad - M_rad) +
-    0.041 * Math.sin(M_prime_rad - M_rad) -
-    0.035 * Math.sin(D_rad) -
-    0.031 * Math.sin(M_prime_rad + M_rad) -
-    0.015 * Math.sin(2 * F_rad - 2 * D_rad) +
-    0.011 * Math.sin(M_prime_rad - 4 * D_rad);
-
-  // Latitude perturbations
-  let dB =
-    -0.173 * Math.sin(F_rad - 2 * D_rad) -
-    0.055 * Math.sin(M_prime_rad - F_rad - 2 * D_rad) -
-    0.046 * Math.sin(M_prime_rad + F_rad - 2 * D_rad) +
-    0.033 * Math.sin(F_rad + 2 * D_rad) +
-    0.017 * Math.sin(2 * M_prime_rad + F_rad);
-
-  // Distance perturbations (in Earth Radii)
-  let dR_ER =
-    -0.58 * Math.cos(M_prime_rad - 2 * D_rad) - 0.46 * Math.cos(2 * D_rad);
-
-  // --- Calculate final ecliptic coords ---
-  const lambda = L0 + dL; // Ecliptic Longitude (degrees)
-  const beta = dB; // Ecliptic Latitude (degrees)
-  const meanDistanceER = 60.2666; // Mean distance in Earth Radii
-  const distanceER = meanDistanceER + dR_ER;
-  const distanceKm = distanceER * config.EARTH_RADIUS_KM; // Distance in km
-
-  const lambda_rad = THREE.MathUtils.degToRad(lambda);
-  const beta_rad = THREE.MathUtils.degToRad(beta);
-
-  // --- Convert Spherical Ecliptic to Cartesian Ecliptic ---
-  const x_ecl = distanceKm * Math.cos(beta_rad) * Math.cos(lambda_rad);
-  const y_ecl = distanceKm * Math.cos(beta_rad) * Math.sin(lambda_rad);
-  const z_ecl = distanceKm * Math.sin(beta_rad);
-
-  // --- Calculate Obliquity of the Ecliptic (degrees) ---
-  const epsilon0 = 23.43929111;
-  const epsilon =
-    epsilon0 - 0.0130042 * T - 0.00000016 * T * T + 0.000000504 * T * T * T;
-  const epsilon_rad = THREE.MathUtils.degToRad(epsilon);
-
-  // --- Rotate Cartesian Ecliptic to Cartesian Equatorial (ECI) ---
-  const cos_eps = Math.cos(epsilon_rad);
-  const sin_eps = Math.sin(epsilon_rad);
-
-  const x_eci = x_ecl;
-  const y_eci = y_ecl * cos_eps - z_ecl * sin_eps;
-  const z_eci = y_ecl * sin_eps + z_ecl * cos_eps;
-
-  // Return position in kilometers
-  return { x: x_eci, y: y_eci, z: z_eci };
-}
+let lastUpdateTime = new Date();
 
 // --- Animation loop ---
 const initialMoonFaceDirection = new THREE.Vector3(0, 0, -1); // Assume texture faces -Z locally
@@ -1160,7 +752,7 @@ function animate() {
     const now = new Date();
     const elapsedTimeMs = now - lastUpdateTime;
 
-    if (elapsedTimeMs >= updateIntervalMs && tleData.length > 0) {
+    if (elapsedTimeMs >= config.REALTIME_UPDATE_INTERVAL_MS && tleData.length > 0) {
       currentTime = now;
       updatePositions();
       lastUpdateTime = now;
@@ -1215,17 +807,17 @@ function animate() {
   }
 
   // Update time display regardless
-  document.getElementById("time").textContent = currentTime.toUTCString();
+  document.getElementById("time").textContent = currentTime.toLocaleString();
 
   // --- Earth Rotation ---
-  const hours = currentTime.getUTCHours();
-  const minutes = currentTime.getUTCMinutes();
-  const seconds = currentTime.getUTCSeconds();
-  const milliseconds = currentTime.getUTCMilliseconds();
-  const fractionOfDay =
-    (hours + minutes / 60 + seconds / 3600 + milliseconds / 3600000) / 24;
-  const earthRotationY = fractionOfDay * 2 * Math.PI;
-  earth.rotation.y = earthRotationY + Math.PI;
+  // Calculate GMST angle in radians
+  const gmst = satellite.gstime(currentTime);
+  // Apply rotation. The texture center (0 deg lon) should align with the meridian indicated by GMST.
+  // If the texture center (u=0.5) initially aligns with +Z, a rotation of `gmst` radians
+  // around the Y-axis will position the 0-degree meridian correctly relative to the ECI frame.
+  // We might need a small offset depending on the initial texture mapping orientation.
+  // Let's start with just GMST.
+  earth.rotation.y = gmst;
 
   // Update Sun position
   sunlight.position.copy(sun.position);
@@ -1245,44 +837,3 @@ animate();
 
 // 2. Start fetching and processing satellite data in the background
 initTLEs(); // This is async, won't block rendering
-
-// Initial UI state for play button
-document.getElementById("play").textContent = "▶"; // Start with Play icon
-
-// --- Search Functionality ---
-function searchSatellite() {
-  // Ensure suggestions are hidden when search is explicitly triggered
-  hideSuggestions();
-
-  if (!tleData || tleData.length === 0) {
-    console.warn("Satellite data not yet loaded for search.");
-    return;
-  }
-
-  const searchTerm = searchInput.value.trim().toLowerCase();
-  if (!searchTerm) return; // Do nothing if search is empty
-
-  // Find the first match (consider if multiple results should be handled differently)
-  const foundIndex = tleData.findIndex((sat) => {
-    const nameMatch =
-      sat.OBJECT_NAME && sat.OBJECT_NAME.toLowerCase().includes(searchTerm);
-    const noradIdMatch =
-      sat.NORAD_CAT_ID && String(sat.NORAD_CAT_ID).includes(searchTerm);
-    return nameMatch || noradIdMatch;
-  });
-
-  if (foundIndex !== -1) {
-    console.log(
-      `Found satellite: ${tleData[foundIndex].OBJECT_NAME} (Index: ${foundIndex})`
-    );
-    clearSelection();
-    selectSatellite(foundIndex);
-    requestTrajectory(foundIndex);
-    // Maybe clear the search input after selection?
-    // searchInput.value = '';
-  } else {
-    console.log(`Satellite matching "${searchTerm}" not found.`);
-    alert(`Satellite matching "${searchTerm}" not found.`);
-    clearSelection();
-  }
-}
