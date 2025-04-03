@@ -1,6 +1,20 @@
 import * as config from "./config.js";
 import { searchSatellite } from "./search.js";
-import { getStarfield, getEarth, getMoon, getSun, getMoonPosition } from "./celestial.js";
+import {
+  getStarfield,
+  getEarth,
+  getMoon,
+  getSun,
+  getMoonPosition,
+  getMercury,
+  getVenus,
+  getMars,
+  getJupiter,
+  getSaturn,
+  getUranus,
+  getNeptune,
+  getPluto,
+} from "./celestial.js";
 
 const satelliteInfoPanel = document.getElementById("satelliteInfo");
 const selectedSatelliteInfoPanel = document.getElementById(
@@ -15,7 +29,7 @@ const camera = new THREE.PerspectiveCamera(
   60,
   window.innerWidth / window.innerHeight,
   0.1,
-  10000000
+  100000000
 );
 
 const renderer = new THREE.WebGLRenderer({ antialias: true }); // Added antialias for smoother edges
@@ -35,17 +49,41 @@ scene.add(earth);
 const moon = getMoon();
 scene.add(moon);
 
+const mercury = getMercury();
+scene.add(mercury);
+
+const venus = getVenus();
+scene.add(venus);
+
+const mars = getMars();
+scene.add(mars);
+
+const jupiter = getJupiter();
+scene.add(jupiter);
+
+const saturn = getSaturn();
+scene.add(saturn);
+
+const uranus = getUranus();
+scene.add(uranus);
+
+const neptune = getNeptune();
+scene.add(neptune);
+
+const pluto = getPluto();
+scene.add(pluto);
+
 // --- Camera controls ---
 const controls = new THREE.OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
-controls.dampingFactor = 0.05; // Smoother damping
+controls.dampingFactor = 0.05;
 controls.target.set(0, 0, 0);
 controls.enablePan = false;
 controls.minDistance = 1.5;
 controls.maxDistance = 500;
 camera.position.x = 10;
 camera.position.y = 10;
-camera.position.z = 10; // Start further back
+camera.position.z = 10;
 
 // --- Raycasting and Interaction ---
 const raycaster = new THREE.Raycaster();
@@ -169,7 +207,10 @@ worker.onmessage = (e) => {
         selectedTrajectory.material.dispose();
         scene.remove(selectedTrajectory);
       }
-      selectedTrajectory = buildTrajectoryLine(trajectoryPoints, config.SELECTION_COLOR); // Use selection color
+      selectedTrajectory = buildTrajectoryLine(
+        trajectoryPoints,
+        config.SELECTION_COLOR
+      ); // Use selection color
       scene.add(selectedTrajectory);
     } else if (satelliteIndex === highlightedIndex) {
       // Trajectory is for the currently HIGHLIGHTED (hovered) satellite
@@ -179,7 +220,10 @@ worker.onmessage = (e) => {
         currentTrajectory.material.dispose();
         scene.remove(currentTrajectory);
       }
-      currentTrajectory = buildTrajectoryLine(trajectoryPoints, config.HIGHLIGHT_COLOR); // Use highlight color
+      currentTrajectory = buildTrajectoryLine(
+        trajectoryPoints,
+        config.HIGHLIGHT_COLOR
+      ); // Use highlight color
       scene.add(currentTrajectory);
     } else {
       // Trajectory data arrived, but the user is no longer hovering over (or selecting)
@@ -331,8 +375,6 @@ async function initTLEs() {
     updatePositions();
 
     initialDataLoaded = true; // Mark initial data as loaded
-
-    // Keyboard listeners for searchInput (input, keydown) are added globally above
   } catch (error) {
     console.error("Error initializing satellites:", error);
   }
@@ -676,6 +718,12 @@ searchButton.addEventListener("click", () => {
   }
 });
 
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") {
+    clearSelection();
+  }
+});
+
 let lastUpdateTime = new Date();
 
 // --- Animation loop ---
@@ -687,9 +735,17 @@ const earthDirection = new THREE.Vector3();
 let cameraTargetObject = earth; // Default target is Earth
 const targetObjects = {
   // Map for easy lookup
+  sun: sun,
+  mercury: mercury,
+  venus: venus,
   earth: earth,
   moon: moon,
-  sun: sun,
+  mars: mars,
+  jupiter: jupiter,
+  saturn: saturn,
+  uranus: uranus,
+  neptune: neptune,
+  pluto: pluto
 };
 const targetButtons = document.querySelectorAll("#target-controls button");
 
@@ -710,17 +766,34 @@ function setCameraTarget(targetName) {
     });
 
     // Adjust camera distance based on target for better initial view (optional)
-    let newDistance = 10; // Default for Earth
+    let newDistance = 3; // Default for Earth
     if (cameraTargetObject === moon) {
-      newDistance = config.MOON_RADIUS * 5; // Closer view for moon
+      newDistance = config.MOON_RADIUS * 3;
     } else if (cameraTargetObject === sun) {
-      newDistance = config.SUN_RADIUS * 3; // Wider view for sun
+      newDistance = config.SUN_RADIUS * 3;
+    } else if (cameraTargetObject === mercury) {
+      newDistance = config.MERCURY_RADIUS * 3;
+    } else if (cameraTargetObject === venus) {
+      newDistance = config.VENUS_RADIUS * 3;
+    } else if (cameraTargetObject === mars) {
+      newDistance = config.MARS_RADIUS * 3;
+    } else if (cameraTargetObject === jupiter) {
+      newDistance = config.JUPITER_RADIUS * 3;
+    } else if (cameraTargetObject === saturn) {
+      newDistance = config.SATURN_RADIUS * 3;
+    } else if (cameraTargetObject === uranus) {
+      newDistance = config.URANUS_RADIUS * 3;
+    } else if (cameraTargetObject === neptune) {
+      newDistance = config.NEPTUNE_RADIUS * 3;
+    } else if (cameraTargetObject === pluto) {
+      newDistance = config.PLUTO_RADIUS * 3;
     }
+
     // Smoothly move camera - more complex, requires tweening library or manual lerp
     // For simplicity, just set the controls target directly (will jump)
     controls.target.copy(cameraTargetObject.position);
     controls.minDistance = newDistance / 2; // Adjust min/max distance too
-    controls.maxDistance = newDistance * 5;
+    controls.maxDistance = newDistance * 10;
     camera.position.set(
       cameraTargetObject.position.x + newDistance,
       cameraTargetObject.position.y + newDistance / 2,
@@ -752,7 +825,10 @@ function animate() {
     const now = new Date();
     const elapsedTimeMs = now - lastUpdateTime;
 
-    if (elapsedTimeMs >= config.REALTIME_UPDATE_INTERVAL_MS && tleData.length > 0) {
+    if (
+      elapsedTimeMs >= config.REALTIME_UPDATE_INTERVAL_MS &&
+      tleData.length > 0
+    ) {
       currentTime = now;
       updatePositions();
       lastUpdateTime = now;

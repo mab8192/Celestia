@@ -240,18 +240,23 @@ canvas {
 #target-controls {
     position: absolute;
     top: 15px;
-    left: 50%;
-    transform: translateX(-50%); /* Center horizontally */
+    right: 15px; /* Position from the right */
     z-index: 10;
     background-color: rgba(40, 40, 40, 0.8);
-    padding: 5px 10px;
+    padding: 10px 8px; /* Adjust padding */
     border-radius: 8px;
     box-shadow: 0 2px 5px rgba(0,0,0,0.3);
     display: flex;
-    align-items: center;
-    gap: 8px;
+    flex-direction: column; /* Stack items vertically */
+    align-items: center; /* Align items to the center */
+    gap: 5px; /* Adjust gap for vertical spacing */
     color: #e0e0e0;
     font-size: 14px;
+}
+
+#target-controls span { /* Style the 'Target:' label */
+    margin-bottom: 5px; /* Add space below the label */
+    width: 100%; /* Make span take full width */
 }
 
 #target-controls button {

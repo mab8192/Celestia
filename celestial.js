@@ -127,7 +127,6 @@ export function getMoon() {
   // Use MeshStandardMaterial for realistic lighting
   const moonMaterial = new THREE.MeshStandardMaterial({
     map: moonTexture,
-    emissive: 0x111111,
   });
   const moon = new THREE.Mesh(moonGeometry, moonMaterial);
   return moon;
@@ -152,6 +151,198 @@ export function getSun() {
 
   return { sun, sunlight };
 }
+
+export function getMercury() {
+  const mercuryGeometry = new THREE.SphereGeometry(
+    config.MERCURY_RADIUS,
+    config.PLANET_GEOMETRY_DETAIL,
+    config.PLANET_GEOMETRY_DETAIL
+  );
+
+  const mercuryTexture = textureLoader.load("assets/mercury.jpg");
+  const mercuryMaterial = new THREE.MeshLambertMaterial({
+    map: mercuryTexture,
+  });
+
+  const mercury = new THREE.Mesh(mercuryGeometry, mercuryMaterial);
+  // Position relative to Earth (origin), Sun at (config.SUN_DISTANCE, 0, 0)
+  // Mercury distance: 0.39 AU
+  mercury.position.set(config.SUN_DISTANCE * (1 - 0.39), 0, 0);
+  return mercury;
+}
+
+export function getVenus() {
+  const venusGeometry = new THREE.SphereGeometry(
+    config.VENUS_RADIUS,
+    config.PLANET_GEOMETRY_DETAIL,
+    config.PLANET_GEOMETRY_DETAIL
+  );
+
+  const venusTexture = textureLoader.load("assets/venus_surface.jpg");
+  const venusMaterial = new THREE.MeshLambertMaterial({
+    map: venusTexture,
+  });
+
+  const venus = new THREE.Mesh(venusGeometry, venusMaterial);
+  // Venus distance: 0.72 AU
+  venus.position.set(config.SUN_DISTANCE * (1 - 0.72), 0, 0);
+  return venus;
+}
+
+export function getMars() {
+  const marsGeometry = new THREE.SphereGeometry(
+    config.MARS_RADIUS,
+    config.PLANET_GEOMETRY_DETAIL,
+    config.PLANET_GEOMETRY_DETAIL
+  );
+
+  const marsTexture = textureLoader.load("assets/mars.jpg");
+  const marsMaterial = new THREE.MeshLambertMaterial({
+    map: marsTexture,
+  });
+
+  const mars = new THREE.Mesh(marsGeometry, marsMaterial);
+  // Mars distance: 1.52 AU
+  mars.position.set(config.SUN_DISTANCE * (1 - 1.52), 0, 0);
+  return mars;
+}
+
+export function getJupiter() {
+  const jupiterGeometry = new THREE.SphereGeometry(
+    config.JUPITER_RADIUS,
+    config.PLANET_GEOMETRY_DETAIL,
+    config.PLANET_GEOMETRY_DETAIL
+  );
+
+  const jupiterTexture = textureLoader.load("assets/jupiter.jpg");
+  const jupiterMaterial = new THREE.MeshLambertMaterial({
+    map: jupiterTexture,
+  });
+
+  const jupiter = new THREE.Mesh(jupiterGeometry, jupiterMaterial);
+  // Jupiter distance: 5.20 AU
+  jupiter.position.set(config.SUN_DISTANCE * (1 - 5.20), 0, 0);
+  return jupiter;
+}
+
+export function getSaturn() {
+  const saturnGeometry = new THREE.SphereGeometry(
+    config.SATURN_RADIUS,
+    config.PLANET_GEOMETRY_DETAIL,
+    config.PLANET_GEOMETRY_DETAIL
+  );
+
+  const saturnTexture = textureLoader.load("assets/saturn.jpg");
+  const saturnMaterial = new THREE.MeshLambertMaterial({
+    map: saturnTexture,
+  });
+
+  const saturn = new THREE.Mesh(saturnGeometry, saturnMaterial);
+  // Saturn distance: 9.58 AU
+  saturn.position.set(config.SUN_DISTANCE * (1 - 9.58), 0, 0);
+
+  // --- Add Rings ---
+  const ringTexture = textureLoader.load("assets/saturn_rings.png");
+  ringTexture.wrapS = THREE.RepeatWrapping; // Repeat texture horizontally
+  ringTexture.repeat.x = 2; // How many times to repeat texture around the ring
+
+  const innerRadius = config.SATURN_RADIUS * 1.1; // Scale inner radius
+  const outerRadius = config.SATURN_RADIUS * 2.0; // Scale outer radius
+  const ringGeometry = new THREE.RingGeometry(innerRadius, outerRadius, 64); // 64 segments for smoothness
+
+  // Rotate geometry so the texture maps correctly if needed (RingGeometry is XY plane)
+  // We want the texture to wrap *around* the ring. Default UVs might work with wrapS.
+  // If not, might need UV adjustments or rotating geometry to align with texture.
+
+  // Fix UVs to map texture radially
+  const pos = ringGeometry.attributes.position;
+  const v3 = new THREE.Vector3();
+  for (let i = 0; i < pos.count; i++){
+      v3.fromBufferAttribute(pos, i);
+      // Map 'u' coordinate based on angle (atan2) and 'v' based on radius
+      // This maps the long texture strip around the ring correctly.
+      ringGeometry.attributes.uv.setXY(i, (v3.length() - innerRadius)/(outerRadius - innerRadius), 0);
+      // The V coordinate might need adjustment based on the texture layout, setting to 0 for a thin strip texture.
+  }
+   ringGeometry.attributes.uv.needsUpdate = true;
+
+
+  const ringMaterial = new THREE.MeshStandardMaterial({
+    map: ringTexture,
+    side: THREE.DoubleSide, // Visible from both sides
+    transparent: true, // Enable transparency based on texture
+    // alphaTest: 0.5, // Optional: Adjust if transparency has sharp edges
+  });
+
+  const rings = new THREE.Mesh(ringGeometry, ringMaterial);
+  // RingGeometry is in XY plane, rotate it 90 degrees around X-axis to make it flat in XZ plane
+  rings.rotation.x = Math.PI / 2;
+
+  saturn.add(rings); // Add rings as a child of Saturn
+
+  // Apply Saturn's axial tilt (approx 26.7 degrees)
+  // Rotating the parent Saturn object will also rotate the child rings
+  saturn.rotation.z = THREE.MathUtils.degToRad(26.7); // Tilt relative to orbit
+
+
+  return saturn;
+}
+
+export function getUranus() {
+  const uranusGeometry = new THREE.SphereGeometry(
+    config.URANUS_RADIUS,
+    config.PLANET_GEOMETRY_DETAIL,
+    config.PLANET_GEOMETRY_DETAIL
+  );
+
+  const uranusTexture = textureLoader.load("assets/uranus.jpg");
+  const uranusMaterial = new THREE.MeshLambertMaterial({
+    map: uranusTexture,
+  });
+
+  const uranus = new THREE.Mesh(uranusGeometry, uranusMaterial);
+  // Uranus distance: 19.22 AU
+  uranus.position.set(config.SUN_DISTANCE * (1 - 19.22), 0, 0);
+  return uranus;
+}
+
+export function getNeptune() {
+  const neptuneGeometry = new THREE.SphereGeometry(
+    config.NEPTUNE_RADIUS,
+    config.PLANET_GEOMETRY_DETAIL,
+    config.PLANET_GEOMETRY_DETAIL
+  );
+
+  const neptuneTexture = textureLoader.load("assets/neptune.jpg");
+  const neptuneMaterial = new THREE.MeshLambertMaterial({
+    map: neptuneTexture,
+  });
+
+  const neptune = new THREE.Mesh(neptuneGeometry, neptuneMaterial);
+  // Neptune distance: 30.05 AU
+  neptune.position.set(config.SUN_DISTANCE * (1 - 30.05), 0, 0);
+  return neptune;
+}
+
+export function getPluto() {
+  const plutoGeometry = new THREE.SphereGeometry(
+    config.PLUTO_RADIUS,
+    config.PLANET_GEOMETRY_DETAIL,
+    config.PLANET_GEOMETRY_DETAIL
+  );
+
+  const plutoTexture = textureLoader.load("assets/pluto.jpg");
+  const plutoMaterial = new THREE.MeshLambertMaterial({
+    map: plutoTexture,
+  });
+
+  const pluto = new THREE.Mesh(plutoGeometry, plutoMaterial);
+  // Pluto distance: 39.48 AU
+  pluto.position.set(config.SUN_DISTANCE * (1 - 39.48), 0, 0);
+  return pluto;
+}
+
+/** Helper functions */
 
 /**
  * Calculates the Julian Day (JD) for a given JavaScript Date object.
