@@ -38,12 +38,13 @@ const renderer = new THREE.WebGLRenderer({
 renderer.setSize(window.innerWidth, window.innerHeight);
 document.body.appendChild(renderer.domElement);
 
+const sceneOffset = new THREE.Vector3(0, 0, 0);
+
 const starfield = getStarfield();
 scene.add(starfield);
 
-const { sun, sunlight } = getSun();
+const sun = getSun();
 scene.add(sun);
-scene.add(sunlight);
 
 const { earth, earthGeometry, earthMaterial } = getEarth();
 scene.add(earth);
@@ -482,51 +483,54 @@ function updatePositions() {
   // --- Update Celestial Body Positions using orbits.js ---
   const scaleFactor = config.AU * config.SCALE; // Combined factor: AU -> km -> scene scale
 
-  // Calculate positions (AU, Heliocentric Ecliptic)
+  // Calculate ABSOLUTE positions (AU, Heliocentric Ecliptic) first
   const mercuryPosAU = getPlanetPosition("mercury", currentTime);
   const venusPosAU = getPlanetPosition("venus", currentTime);
-  const earthPosAU = getPlanetPosition("earth", currentTime);
+  const earthPosAU = getPlanetPosition("earth", currentTime); // Heliocentric AU
   const marsPosAU = getPlanetPosition("mars", currentTime);
   const jupiterPosAU = getPlanetPosition("jupiter", currentTime);
   const saturnPosAU = getPlanetPosition("saturn", currentTime);
   const uranusPosAU = getPlanetPosition("uranus", currentTime);
   const neptunePosAU = getPlanetPosition("neptune", currentTime);
   const plutoPosAU = getPlanetPosition("pluto", currentTime); // Note: Pluto needs appropriate elements
-  const moonPosAU = getMoonPosition(currentTime, earthPosAU); // Pass Earth's pos
+  const moonPosAU = getMoonPosition(currentTime, earthPosAU); // Geocentric AU
 
-  // Apply scaled positions to meshes
-  mercury.position.copy(mercuryPosAU).multiplyScalar(scaleFactor);
-  venus.position.copy(venusPosAU).multiplyScalar(scaleFactor);
-  earth.position.copy(earthPosAU).multiplyScalar(scaleFactor);
-  mars.position.copy(marsPosAU).multiplyScalar(scaleFactor);
-  jupiter.position.copy(jupiterPosAU).multiplyScalar(scaleFactor);
-  saturn.position.copy(saturnPosAU).multiplyScalar(scaleFactor);
-  uranus.position.copy(uranusPosAU).multiplyScalar(scaleFactor);
-  neptune.position.copy(neptunePosAU).multiplyScalar(scaleFactor);
-  pluto.position.copy(plutoPosAU).multiplyScalar(scaleFactor);
-  moon.position.copy(moonPosAU).multiplyScalar(scaleFactor);
+  // Apply scale to get ABSOLUTE scaled heliocentric positions
+  const mercuryAbsPos = mercuryPosAU.multiplyScalar(scaleFactor);
+  const venusAbsPos = venusPosAU.multiplyScalar(scaleFactor);
+  const earthAbsPos = earthPosAU.multiplyScalar(scaleFactor);
+  const marsAbsPos = marsPosAU.multiplyScalar(scaleFactor);
+  const jupiterAbsPos = jupiterPosAU.multiplyScalar(scaleFactor);
+  const saturnAbsPos = saturnPosAU.multiplyScalar(scaleFactor);
+  const uranusAbsPos = uranusPosAU.multiplyScalar(scaleFactor);
+  const neptuneAbsPos = neptunePosAU.multiplyScalar(scaleFactor);
+  const plutoAbsPos = plutoPosAU.multiplyScalar(scaleFactor);
+
+  // --- Moon Position Calculation Refinement ---
+  // Convert moon's geocentric AU position to heliocentric AU
+  const moonHelioAU = earthPosAU.clone().add(moonPosAU);
+  // Scale moon's heliocentric position
+  const moonAbsPosScaled = moonHelioAU.multiplyScalar(scaleFactor);
+
+  // Apply the CURRENT sceneOffset to the ABSOLUTE positions to get final scene position
+  // Sun is always at the heliocentric origin (0,0,0) before offset
+  sun.position.copy(new THREE.Vector3(0,0,0)).add(sceneOffset);
+  mercury.position.copy(mercuryAbsPos).add(sceneOffset);
+  venus.position.copy(venusAbsPos).add(sceneOffset);
+  earth.position.copy(earthAbsPos).add(sceneOffset); // Earth's final position in the scene
+  mars.position.copy(marsAbsPos).add(sceneOffset);
+  jupiter.position.copy(jupiterAbsPos).add(sceneOffset);
+  saturn.position.copy(saturnAbsPos).add(sceneOffset);
+  uranus.position.copy(uranusAbsPos).add(sceneOffset);
+  neptune.position.copy(neptuneAbsPos).add(sceneOffset);
+  pluto.position.copy(plutoAbsPos).add(sceneOffset);
+  moon.position.copy(moonAbsPosScaled).add(sceneOffset); // Use scaled heliocentric position
+
 
   // --- Update Axial Rotations ---
   // Earth rotation based on GMST, adjusted for initial texture alignment (+Z axis)
   const gmst = satellite.gstime(currentTime);
   earth.rotation.y = gmst + Math.PI / 2;
-
-  // Approximate rotations for other planets (can be refined with precise periods)
-  // Calculate rotation based on elapsed time since an arbitrary epoch (e.g., J2000)
-  const J2000 = new Date(Date.UTC(2000, 0, 1, 12, 0, 0));
-  const elapsedDays =
-    (currentTime.getTime() - J2000.getTime()) / (1000 * 60 * 60 * 24);
-
-  // Rotation = (elapsedDays / siderealPeriodDays) * 2 * PI
-  // Note: Need to check initial tilt axes in celestial.js for consistency
-  mercury.rotation.y = (elapsedDays / 58.65) * 2 * Math.PI;
-  venus.rotation.y = (elapsedDays / -243.02) * 2 * Math.PI; // Retrograde
-  mars.rotation.y = (elapsedDays / 1.026) * 2 * Math.PI;
-  jupiter.rotation.y = (elapsedDays / 0.414) * 2 * Math.PI;
-  saturn.rotation.y = (elapsedDays / 0.444) * 2 * Math.PI;
-  uranus.rotation.y = (elapsedDays / -0.718) * 2 * Math.PI; // Retrograde
-  neptune.rotation.y = (elapsedDays / 0.671) * 2 * Math.PI;
-  pluto.rotation.y = (elapsedDays / -6.387) * 2 * Math.PI; // Retrograde (Dwarf Planet)
 
   // Moon: Tidal locking - always face Earth
   // Need to handle the case where moon and earth are at the same position briefly during setup
@@ -550,6 +554,23 @@ function updatePositions() {
     moon.setRotationFromQuaternion(quaternion);
   }
 
+  // Approximate rotations for other planets (can be refined with precise periods)
+  // Calculate rotation based on elapsed time since an arbitrary epoch (e.g., J2000)
+  const J2000 = new Date(Date.UTC(2000, 0, 1, 12, 0, 0));
+  const elapsedDays =
+    (currentTime.getTime() - J2000.getTime()) / (1000 * 60 * 60 * 24);
+
+  // Rotation = (elapsedDays / siderealPeriodDays) * 2 * PI
+  // Note: Need to check initial tilt axes in celestial.js for consistency
+  mercury.rotation.y = (elapsedDays / 58.65) * 2 * Math.PI;
+  venus.rotation.y = (elapsedDays / -243.02) * 2 * Math.PI; // Retrograde
+  mars.rotation.y = (elapsedDays / 1.026) * 2 * Math.PI;
+  jupiter.rotation.y = (elapsedDays / 0.414) * 2 * Math.PI;
+  saturn.rotation.y = (elapsedDays / 0.444) * 2 * Math.PI;
+  uranus.rotation.y = (elapsedDays / -0.718) * 2 * Math.PI; // Retrograde
+  neptune.rotation.y = (elapsedDays / 0.671) * 2 * Math.PI;
+  pluto.rotation.y = (elapsedDays / -6.387) * 2 * Math.PI; // Retrograde (Dwarf Planet)
+
   // --- End Celestial Body Updates ---
 
   // --- Request satellite position updates from the worker ---
@@ -557,6 +578,8 @@ function updatePositions() {
   if (tleData && tleData.length > 0) {
     // Send the *entire* current TLE dataset and the desired time
     // The worker will process this and send back results incrementally
+    // Worker calculates relative to Earth ECI, main thread adds to earth.position
+    // Since earth.position is now correctly offset, this should work.
     worker.postMessage({
       type: "CALCULATE_POSITIONS", // Add a type for clarity
       tleData: tleData, // Send the full data set
@@ -813,62 +836,8 @@ document.addEventListener("keydown", (event) => {
   }
 });
 
-/** Recenter the entire scene so that newCenter is at 0, 0, 0 */
-function recenterScene(newCenter) {
-  // Calculate the offset needed to move newCenter to origin
-  const offset = new THREE.Vector3();
-  offset.copy(newCenter).negate();
-
-  // Move all celestial bodies
-  sun.position.add(offset);
-  sunlight.position.add(offset);
-  mercury.position.add(offset);
-  venus.position.add(offset);
-  earth.position.add(offset);
-  moon.position.add(offset);
-  mars.position.add(offset);
-  jupiter.position.add(offset);
-  saturn.position.add(offset);
-  uranus.position.add(offset);
-  neptune.position.add(offset);
-  pluto.position.add(offset);
-
-  // Move all satellites
-  const tempMatrix = new THREE.Matrix4();
-  for (let i = 0; i < satelliteCount; i++) {
-    satellites.getMatrixAt(i, tempMatrix);
-    const position = new THREE.Vector3();
-    position.setFromMatrixPosition(tempMatrix);
-    position.add(offset);
-    tempMatrix.setPosition(position);
-    satellites.setMatrixAt(i, tempMatrix);
-  }
-  satellites.instanceMatrix.needsUpdate = true;
-
-  // Update highlighted and selected satellite positions if they exist
-  if (highlightedSatellite) {
-    highlightedSatellite.position.add(offset);
-  }
-  if (selectedSatellite) {
-    selectedSatellite.position.add(offset);
-  }
-
-  // Update trajectories if they exist
-  if (currentTrajectory) {
-    currentTrajectory.position.add(offset);
-  }
-  if (selectedTrajectory) {
-    selectedTrajectory.position.add(offset);
-  }
-
-  // Update camera position and controls target
-  camera.position.add(offset);
-  controls.target.add(offset);
-  controls.update();
-}
-
 // --- Camera Target Tracking ---
-let cameraTargetObject = sun; // Default target is Earth
+let cameraTargetObject = sun; // Default target is the Sun object
 const targetObjects = {
   // Map for easy lookup
   sun: sun,
@@ -885,38 +854,116 @@ const targetObjects = {
 };
 const targetButtons = document.querySelectorAll("#target-controls button");
 
+// --- Tooltip Management ---
+const planetTooltips = {};
+Object.keys(targetObjects).forEach(planetName => {
+    const tooltipId = `tooltip-${planetName}`;
+    const element = document.getElementById(tooltipId);
+
+    if (element) {
+        planetTooltips[planetName] = element;
+        // Add double-click listener
+        element.addEventListener('dblclick', () => {
+          console.log(`Double-clicking ${planetName}`);
+            setCameraTarget(planetName);
+        });
+    } else {
+        console.warn(`Tooltip element not found for ID: ${tooltipId}`);
+    }
+});
+
 // Function to set the active target
 function setCameraTarget(targetName) {
-  const newTarget = targetObjects[targetName];
-  if (newTarget && newTarget !== cameraTargetObject) {
-    console.log(`Setting camera target to: ${targetName}`);
-    cameraTargetObject = newTarget;
+  const newTargetObject = targetObjects[targetName]; // The mesh object
 
-    // Update button active states
-    targetButtons.forEach((button) => {
-      if (button.dataset.target === targetName) {
-        button.classList.add("active");
-      } else {
-        button.classList.remove("active");
-      }
-    });
+  console.log(`Setting camera target to: ${targetName}`);
+  cameraTargetObject = newTargetObject; // Keep track of the object
 
-    // Adjust camera distance based on target for better initial view (optional)
-    const objRadius = cameraTargetObject.geometry.boundingSphere.radius;
-    const newDistance = objRadius * 3;
+  // Update button active states
+  targetButtons.forEach((button) => {
+    if (button.dataset.target === targetName) {
+      button.classList.add("active");
+    } else {
+      button.classList.remove("active");
+    }
+  });
 
-    // Smoothly move camera - more complex, requires tweening library or manual lerp
-    // For simplicity, just set the controls target directly (will jump)
-    controls.target.copy(cameraTargetObject.position);
-    controls.minDistance = objRadius * config.CAMERA_MIN_DISTANCE_FACTOR; // Adjust min/max distance too
-    controls.maxDistance = objRadius * config.CAMERA_MAX_DISTANCE_FACTOR;
-    camera.position.set(
-      cameraTargetObject.position.x + newDistance,
-      cameraTargetObject.position.y + newDistance / 2,
-      cameraTargetObject.position.z + newDistance
-    ); // Reposition camera
-    recenterScene(cameraTargetObject.position);
+  // --- Calculate the ABSOLUTE (un-offset) world position of the new target ---
+  const scaleFactor = config.AU * config.SCALE;
+  let targetAbsolutePosition;
+
+  if (targetName === 'sun') {
+      targetAbsolutePosition = new THREE.Vector3(0, 0, 0); // Sun is heliocentric origin
+  } else if (targetName === 'moon') {
+      const earthPosAU = getPlanetPosition("earth", currentTime);
+      const moonPosAU = getMoonPosition(currentTime, earthPosAU); // Geocentric AU
+      const moonHelioAU = earthPosAU.clone().add(moonPosAU); // Heliocentric AU
+      targetAbsolutePosition = moonHelioAU.multiplyScalar(scaleFactor); // Scaled Heliocentric
+  } else {
+      // For planets
+      const planetPosAU = getPlanetPosition(targetName, currentTime); // Heliocentric AU
+      targetAbsolutePosition = planetPosAU.multiplyScalar(scaleFactor); // Scaled Heliocentric
   }
+
+  // --- Calculate Offsets ---
+  // Determine the new offset vector required to center the target
+  const newOffset = targetAbsolutePosition.clone().negate();
+  // Calculate the change in offset from the previous state
+  const deltaOffset = newOffset.clone().sub(sceneOffset);
+
+  // --- Adjust Camera and Controls ---
+  const objRadius = newTargetObject.geometry.boundingSphere.radius;
+  // Calculate new camera distance relative to the target's radius
+  const newDistance = objRadius * 5; // Use a factor of the radius for distance
+
+  // Calculate the desired camera position relative to the target's ABSOLUTE position
+  const cameraOffsetVector = new THREE.Vector3(newDistance, newDistance / 2, newDistance);
+  const desiredCameraPositionAbsolute = targetAbsolutePosition.clone().add(cameraOffsetVector);
+
+  // 1. Update controls target to the new target's ABSOLUTE position first
+  controls.target.copy(targetAbsolutePosition);
+  // 2. Then apply the new offset to place the controls target at the scene origin
+  controls.target.add(newOffset);
+
+  // 3. Set camera position (absolute relative to target, then add new offset)
+  camera.position.copy(desiredCameraPositionAbsolute);
+  camera.position.add(newOffset);
+
+  // 4. Update min/max distance for controls based on the object's radius
+  controls.minDistance = objRadius * config.CAMERA_MIN_DISTANCE_FACTOR;
+  // Increase max distance significantly when focused on smaller objects like moon/planets
+  const maxDistFactor = (targetName === 'sun' || targetName === 'jupiter' || targetName === 'saturn')
+                         ? config.CAMERA_MAX_DISTANCE_FACTOR
+                         : config.CAMERA_MAX_DISTANCE_FACTOR * 10;
+  controls.maxDistance = objRadius * maxDistFactor;
+
+
+  // 5. Update the global sceneOffset variable *BEFORE* calling updatePositions
+  sceneOffset.copy(newOffset);
+
+  // 6. Force control update to recognize new target and position
+  controls.update();
+
+  // --- Adjust Existing Scene Elements ---
+  // Apply the deltaOffset to markers to keep them in the correct relative position
+   if (highlightedSatellite) {
+      highlightedSatellite.position.add(deltaOffset);
+   }
+   if (selectedSatellite) {
+      selectedSatellite.position.add(deltaOffset);
+   }
+
+   // Clear trajectories as they are relative to the old frame/offset
+   clearTrajectory();
+   clearSelectedTrajectory();
+   // If a satellite was selected, re-request its trajectory in the new frame
+   if (selectedIndex !== -1) {
+     requestTrajectory(selectedIndex);
+   }
+
+  // 7. Update all object positions based on the *new* sceneOffset
+  // This recalculates all celestial body positions with the new offset applied.
+  updatePositions();
 }
 
 // Add event listeners to target buttons
@@ -969,6 +1016,9 @@ function render() {
     earth.material.uniforms.time.value = performance.now() / 1000.0;
   }
 
+  // Update planet tooltips
+  updatePlanetTooltips();
+
   renderer.render(scene, camera);
 }
 
@@ -986,3 +1036,53 @@ animate();
 
 // 2. Start fetching and processing satellite data in the background
 initTLEs(); // This is async, won't block rendering
+
+// Function to update planet tooltips
+function updatePlanetTooltips() {
+    const width = renderer.domElement.clientWidth;
+    const height = renderer.domElement.clientHeight;
+    const cameraPosition = camera.position; // Cache camera position
+
+    Object.keys(targetObjects).forEach(planetName => {
+        const planet = targetObjects[planetName];
+        const tooltip = planetTooltips[planetName];
+
+        if (!planet || !tooltip) return; // Skip if planet or tooltip missing
+
+        // Hide tooltip if it's the current camera target
+        if (planet === cameraTargetObject) {
+            tooltip.style.display = 'none';
+            return;
+        }
+
+        // Calculate screen position
+        const worldPosition = new THREE.Vector3();
+        planet.getWorldPosition(worldPosition); // Get world position
+
+        // Check if the planet is roughly behind the camera (simple check)
+        const vectorToPlanet = worldPosition.clone().sub(cameraPosition);
+        if (camera.getWorldDirection(new THREE.Vector3()).dot(vectorToPlanet) < 0) {
+             tooltip.style.display = 'none';
+             return;
+        }
+
+        // Project to screen space
+        const screenPosition = worldPosition.clone().project(camera);
+
+        // Convert NDC (-1 to +1) to screen coordinates (pixels)
+        const screenX = (screenPosition.x * 0.5 + 0.5) * width;
+        const screenY = (-screenPosition.y * 0.5 + 0.5) * height;
+
+        // Check if the projected point is within the screen bounds (NDC z check handles points behind camera)
+        const isBehindCamera = screenPosition.z > 1.0;
+        const isOnScreen = screenX >= 0 && screenX <= width && screenY >= 0 && screenY <= height && !isBehindCamera;
+
+        if (isOnScreen) {
+            tooltip.style.left = `${screenX}px`;
+            tooltip.style.top = `${screenY}px`;
+            tooltip.style.display = 'block';
+        } else {
+            tooltip.style.display = 'none';
+        }
+    });
+}

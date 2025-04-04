@@ -6,8 +6,8 @@ export function getStarfield() {
   const starTexture = textureLoader.load("assets/universe.png");
   const starGeometry = new THREE.SphereGeometry(
     config.STARFIELD_SPHERE_RADIUS,
-    config.PLANET_GEOMETRY_DETAIL,
-    config.PLANET_GEOMETRY_DETAIL
+    config.BODY_GEOMETRY_DETAIL,
+    config.BODY_GEOMETRY_DETAIL
   );
   const starMaterial = new THREE.MeshBasicMaterial({
     map: starTexture,
@@ -108,8 +108,8 @@ export function getEarth() {
   });
   const earthGeometry = new THREE.SphereGeometry(
     1,
-    config.PLANET_GEOMETRY_DETAIL,
-    config.PLANET_GEOMETRY_DETAIL
+    config.BODY_GEOMETRY_DETAIL,
+    config.BODY_GEOMETRY_DETAIL
   ); // Increased segments for smoother sphere
   const earth = new THREE.Mesh(earthGeometry, earthMaterial);
   earth.rotation.z = THREE.MathUtils.degToRad(23.5); // tilt at 23.5 deg
@@ -127,6 +127,7 @@ export function getMoon() {
   // Use MeshStandardMaterial for realistic lighting
   const moonMaterial = new THREE.MeshStandardMaterial({
     map: moonTexture,
+    roughness: 100,
   });
   const moon = new THREE.Mesh(moonGeometry, moonMaterial);
   return moon;
@@ -135,8 +136,8 @@ export function getMoon() {
 export function getSun() {
   const sunGeometry = new THREE.SphereGeometry(
     config.SUN_RADIUS,
-    config.SUN_GEOMETRY_DETAIL / 2,
-    config.SUN_GEOMETRY_DETAIL / 2
+    config.BODY_GEOMETRY_DETAIL,
+    config.BODY_GEOMETRY_DETAIL
   );
   const sunTexture = textureLoader.load("assets/sun.jpg");
   const sunMaterial = new THREE.MeshBasicMaterial({
@@ -144,20 +145,22 @@ export function getSun() {
   });
   const sun = new THREE.Mesh(sunGeometry, sunMaterial);
   const sunlight = new THREE.PointLight(0xffffff, 1.5);
-  sunlight.position.set(0, 0, 0);
-  return { sun, sunlight };
+
+  sun.add(sunlight);
+  return sun;
 }
 
 export function getMercury() {
   const mercuryGeometry = new THREE.SphereGeometry(
     config.MERCURY_RADIUS,
-    config.PLANET_GEOMETRY_DETAIL,
-    config.PLANET_GEOMETRY_DETAIL
+    config.BODY_GEOMETRY_DETAIL,
+    config.BODY_GEOMETRY_DETAIL
   );
 
   const mercuryTexture = textureLoader.load("assets/mercury.jpg");
-  const mercuryMaterial = new THREE.MeshLambertMaterial({
+  const mercuryMaterial = new THREE.MeshStandardMaterial({
     map: mercuryTexture,
+    roughness: 100,
   });
 
   const mercury = new THREE.Mesh(mercuryGeometry, mercuryMaterial);
@@ -167,13 +170,14 @@ export function getMercury() {
 export function getVenus() {
   const venusGeometry = new THREE.SphereGeometry(
     config.VENUS_RADIUS,
-    config.PLANET_GEOMETRY_DETAIL,
-    config.PLANET_GEOMETRY_DETAIL
+    config.BODY_GEOMETRY_DETAIL,
+    config.BODY_GEOMETRY_DETAIL
   );
 
   const venusTexture = textureLoader.load("assets/venus_surface.jpg");
-  const venusMaterial = new THREE.MeshLambertMaterial({
+  const venusMaterial = new THREE.MeshStandardMaterial({
     map: venusTexture,
+    roughness: 100,
   });
 
   const venus = new THREE.Mesh(venusGeometry, venusMaterial);
@@ -184,13 +188,14 @@ export function getVenus() {
 export function getMars() {
   const marsGeometry = new THREE.SphereGeometry(
     config.MARS_RADIUS,
-    config.PLANET_GEOMETRY_DETAIL,
-    config.PLANET_GEOMETRY_DETAIL
+    config.BODY_GEOMETRY_DETAIL,
+    config.BODY_GEOMETRY_DETAIL
   );
 
   const marsTexture = textureLoader.load("assets/mars.jpg");
-  const marsMaterial = new THREE.MeshLambertMaterial({
+  const marsMaterial = new THREE.MeshStandardMaterial({
     map: marsTexture,
+    roughness: 100,
   });
 
   const mars = new THREE.Mesh(marsGeometry, marsMaterial);
@@ -201,13 +206,14 @@ export function getMars() {
 export function getJupiter() {
   const jupiterGeometry = new THREE.SphereGeometry(
     config.JUPITER_RADIUS,
-    config.PLANET_GEOMETRY_DETAIL,
-    config.PLANET_GEOMETRY_DETAIL
+    config.BODY_GEOMETRY_DETAIL,
+    config.BODY_GEOMETRY_DETAIL
   );
 
   const jupiterTexture = textureLoader.load("assets/jupiter.jpg");
-  const jupiterMaterial = new THREE.MeshLambertMaterial({
+  const jupiterMaterial = new THREE.MeshStandardMaterial({
     map: jupiterTexture,
+    roughness: 100,
   });
 
   const jupiter = new THREE.Mesh(jupiterGeometry, jupiterMaterial);
@@ -218,13 +224,14 @@ export function getJupiter() {
 export function getSaturn() {
   const saturnGeometry = new THREE.SphereGeometry(
     config.SATURN_RADIUS,
-    config.PLANET_GEOMETRY_DETAIL,
-    config.PLANET_GEOMETRY_DETAIL
+    config.BODY_GEOMETRY_DETAIL,
+    config.BODY_GEOMETRY_DETAIL
   );
 
   const saturnTexture = textureLoader.load("assets/saturn.jpg");
-  const saturnMaterial = new THREE.MeshLambertMaterial({
+  const saturnMaterial = new THREE.MeshStandardMaterial({
     map: saturnTexture,
+    roughness: 100,
   });
 
   const saturn = new THREE.Mesh(saturnGeometry, saturnMaterial);
@@ -275,13 +282,14 @@ export function getSaturn() {
 export function getUranus() {
   const uranusGeometry = new THREE.SphereGeometry(
     config.URANUS_RADIUS,
-    config.PLANET_GEOMETRY_DETAIL,
-    config.PLANET_GEOMETRY_DETAIL
+    config.BODY_GEOMETRY_DETAIL,
+    config.BODY_GEOMETRY_DETAIL
   );
 
   const uranusTexture = textureLoader.load("assets/uranus.jpg");
-  const uranusMaterial = new THREE.MeshLambertMaterial({
+  const uranusMaterial = new THREE.MeshStandardMaterial({
     map: uranusTexture,
+    roughness: 100,
   });
 
   const uranus = new THREE.Mesh(uranusGeometry, uranusMaterial);
@@ -292,13 +300,14 @@ export function getUranus() {
 export function getNeptune() {
   const neptuneGeometry = new THREE.SphereGeometry(
     config.NEPTUNE_RADIUS,
-    config.PLANET_GEOMETRY_DETAIL,
-    config.PLANET_GEOMETRY_DETAIL
+    config.BODY_GEOMETRY_DETAIL,
+    config.BODY_GEOMETRY_DETAIL
   );
 
   const neptuneTexture = textureLoader.load("assets/neptune.jpg");
-  const neptuneMaterial = new THREE.MeshLambertMaterial({
+  const neptuneMaterial = new THREE.MeshStandardMaterial({
     map: neptuneTexture,
+    roughness: 100,
   });
 
   const neptune = new THREE.Mesh(neptuneGeometry, neptuneMaterial);
@@ -309,13 +318,14 @@ export function getNeptune() {
 export function getPluto() {
   const plutoGeometry = new THREE.SphereGeometry(
     config.PLUTO_RADIUS,
-    config.PLANET_GEOMETRY_DETAIL,
-    config.PLANET_GEOMETRY_DETAIL
+    config.BODY_GEOMETRY_DETAIL,
+    config.BODY_GEOMETRY_DETAIL
   );
 
   const plutoTexture = textureLoader.load("assets/pluto.jpg");
-  const plutoMaterial = new THREE.MeshLambertMaterial({
+  const plutoMaterial = new THREE.MeshStandardMaterial({
     map: plutoTexture,
+    roughness: 100,
   });
 
   const pluto = new THREE.Mesh(plutoGeometry, plutoMaterial);

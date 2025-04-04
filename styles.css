@@ -5,6 +5,8 @@ body {
     background: #1a1a1a; /* Darker background */
     color: #e0e0e0; /* Light gray text */
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; /* Modern font */
+    color: white;
+    font-weight: bold;
 }
 
 #controls {
@@ -280,4 +282,34 @@ canvas {
     border-color: #0056b3;
     color: white;
     font-weight: bold;
+}
+
+/* --- Tooltip Styles --- */
+#tooltip-container {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none; /* Allow clicks to pass through */
+    overflow: hidden; /* Prevent scrollbars if a tooltip goes off-screen */
+    z-index: 1; /* Above canvas, below UI controls */
+}
+
+.planet-tooltip {
+    position: absolute;
+    background-color: rgba(0, 0, 0, 0.7);
+    color: white;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    white-space: nowrap;
+    transform: translate(-50%, -150%); /* Position centered above the point */
+    display: none; /* Hidden by default */
+    /* Prevent text selection */
+    -webkit-user-select: none; /* Safari */
+    -ms-user-select: none; /* IE 10 and IE 11 */
+    user-select: none; /* Standard syntax */
+    /* Set cursor */
+    cursor: pointer;
 }
