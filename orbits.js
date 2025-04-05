@@ -20,12 +20,6 @@ const orbitalElements = {
     mercury: { a: 0.387098, e: 0.205630, I: 7.00487, L: 252.25084, peri: 77.45645, node: 48.33167 },
     venus: { a: 0.723332, e: 0.006773, I: 3.39471, L: 181.97973, peri: 131.53298, node: 76.68069 },
     earth: { a: 1.000000, e: 0.016710, I: 0.00005, L: 100.46435, peri: 102.94719, node: -11.26064 }, // Node is often given as 0 or undefined for ecliptic plane ref.
-    mars: { a: 1.523662, e: 0.093412, I: 1.85061, L: -4.553432, peri: -23.943629, node: 49.57854 },
-    jupiter: { a: 5.203363, e: 0.048393, I: 1.30530, L: 34.396441, peri: 14.75385, node: 100.55615 },
-    saturn: { a: 9.537070, e: 0.054151, I: 2.48446, L: 49.944322, peri: 92.43194, node: 113.71504 },
-    uranus: { a: 19.191264, e: 0.047168, I: 0.76986, L: 313.23218, peri: 170.96424, node: 74.22988 },
-    neptune: { a: 30.068963, e: 0.008586, I: 1.76917, L: -55.120029, peri: 44.97135, node: 131.72169 },
-    pluto: { a: 39.481686, e: 0.248808, I: 17.14175, L: 238.92904, peri: 224.06892, node: 110.30347 },
     // Moon requires geocentric elements
     moon: {
         a_geo: 384400, // Semi-major axis (km) relative to Earth
@@ -36,7 +30,13 @@ const orbitalElements = {
         // For now, placeholder:
         L_geo: 0, peri_geo: 0, node_geo: 0,
         GM_Earth: 3.986004418e5 // km^3/s^2
-    }
+    },
+    mars: { a: 1.523662, e: 0.093412, I: 1.85061, L: -4.553432, peri: -23.943629, node: 49.57854 },
+    jupiter: { a: 5.203363, e: 0.048393, I: 1.30530, L: 34.396441, peri: 14.75385, node: 100.55615 },
+    saturn: { a: 9.537070, e: 0.054151, I: 2.48446, L: 49.944322, peri: 92.43194, node: 113.71504 },
+    uranus: { a: 19.191264, e: 0.047168, I: 0.76986, L: 313.23218, peri: 170.96424, node: 74.22988 },
+    neptune: { a: 30.068963, e: 0.008586, I: 1.76917, L: -55.120029, peri: 44.97135, node: 131.72169 },
+    pluto: { a: 39.481686, e: 0.248808, I: 17.14175, L: 238.92904, peri: 224.06892, node: 110.30347 }
 };
 
 // Helper function to convert degrees to radians
@@ -144,10 +144,9 @@ export function getPlanetPosition(planetName, date) {
  * and does not account for inclination, eccentricity, or perturbations.
  * For accurate lunar positioning, a dedicated library implementing lunar theory (e.g., ELP) is required.
  * @param {Date} date - The date/time for which to calculate the position.
- * @param {THREE.Vector3} earthPosition - Heliocentric position of Earth (AU).
  * @returns {THREE.Vector3} Heliocentric position vector of the Moon in AU.
  */
-export function getMoonPosition(date, earthPosition) {
+export function getMoonPosition(date) {
     const elements = orbitalElements.moon;
 
     // --- Simplified Circular Orbit around Earth in Ecliptic Plane ---
@@ -170,8 +169,6 @@ export function getMoonPosition(date, earthPosition) {
     // Convert geocentric ecliptic (simplified) to a vector
     const moonGeoEcliptic = new THREE.Vector3(x_geo, z_geo, y_geo);
 
-    // Add Earth's heliocentric position to get Moon's heliocentric position
-    const moonPosition = moonGeoEcliptic.add(earthPosition); // earthPosition is already heliocentric ecliptic
-
-    return moonPosition;
+    // Return the calculated geocentric position relative to Earth (in AU)
+    return moonGeoEcliptic;
 }

@@ -112,7 +112,6 @@ export function getEarth() {
     config.BODY_GEOMETRY_DETAIL
   ); // Increased segments for smoother sphere
   const earth = new THREE.Mesh(earthGeometry, earthMaterial);
-  earth.rotation.z = THREE.MathUtils.degToRad(23.5); // tilt at 23.5 deg
 
   return { earth, earthGeometry, earthMaterial };
 }
@@ -199,7 +198,6 @@ export function getMars() {
   });
 
   const mars = new THREE.Mesh(marsGeometry, marsMaterial);
-  mars.rotation.z = THREE.MathUtils.degToRad(25.2); // Axial tilt
   return mars;
 }
 
@@ -235,7 +233,6 @@ export function getSaturn() {
   });
 
   const saturn = new THREE.Mesh(saturnGeometry, saturnMaterial);
-  saturn.rotation.z = THREE.MathUtils.degToRad(26.7); // Axial tilt
 
   // --- Add Rings ---
   const ringTexture = textureLoader.load("assets/saturn_rings.png");
@@ -293,7 +290,6 @@ export function getUranus() {
   });
 
   const uranus = new THREE.Mesh(uranusGeometry, uranusMaterial);
-  uranus.rotation.z = THREE.MathUtils.degToRad(97.8); // Axial tilt
   return uranus;
 }
 
@@ -311,7 +307,6 @@ export function getNeptune() {
   });
 
   const neptune = new THREE.Mesh(neptuneGeometry, neptuneMaterial);
-  neptune.rotation.z = THREE.MathUtils.degToRad(28.3); // Axial tilt
   return neptune;
 }
 

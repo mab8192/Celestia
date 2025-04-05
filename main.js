@@ -16,6 +16,19 @@ import {
 } from "./celestial.js";
 import { getPlanetPosition, getMoonPosition } from "./orbits.js";
 
+// Import tilt constants
+const {
+  MERCURY_AXIAL_TILT,
+  VENUS_AXIAL_TILT,
+  EARTH_AXIAL_TILT,
+  MARS_AXIAL_TILT,
+  JUPITER_AXIAL_TILT,
+  SATURN_AXIAL_TILT,
+  URANUS_AXIAL_TILT,
+  NEPTUNE_AXIAL_TILT,
+  PLUTO_AXIAL_TILT,
+} = config;
+
 const satelliteInfoPanel = document.getElementById("satelliteInfo");
 const selectedSatelliteInfoPanel = document.getElementById(
   "selectedSatelliteInfo"
@@ -93,9 +106,33 @@ camera.position.z = 50;
 // --- Raycasting and Interaction ---
 const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
+
+// --- Reusable Markers (initialized once) ---
 let highlightedSatellite = null;
-let highlightedIndex = -1;
 let selectedSatellite = null;
+
+const highlightGeometry = new THREE.SphereGeometry(0.02, 16, 16);
+const highlightMaterial = new THREE.MeshBasicMaterial({
+  color: config.HIGHLIGHT_COLOR,
+  transparent: true,
+  opacity: 0.8,
+});
+highlightedSatellite = new THREE.Mesh(highlightGeometry, highlightMaterial);
+highlightedSatellite.visible = false;
+earth.add(highlightedSatellite);
+
+const selectionGeometry = new THREE.SphereGeometry(0.025, 16, 16); // Slightly larger
+const selectionMaterial = new THREE.MeshBasicMaterial({
+  color: config.SELECTION_COLOR,
+  transparent: true,
+  opacity: 0.9,
+});
+selectedSatellite = new THREE.Mesh(selectionGeometry, selectionMaterial);
+selectedSatellite.visible = false;
+earth.add(selectedSatellite);
+
+// --- Keep track of indices ---
+let highlightedIndex = -1;
 let selectedIndex = -1;
 
 // --- Satellite Data and Rendering Placeholder ---
@@ -106,7 +143,7 @@ let satelliteCount = 0; // Track how many satellites are actually loaded
 // Create an instanced mesh for satellites instead of points
 const satelliteGeometry = new THREE.SphereGeometry(0.005, 16, 16); // Small sphere
 const satelliteMaterial = new THREE.MeshBasicMaterial({
-  color: 0xffffff
+  color: 0xffffff,
 });
 
 // Create instance mesh with maximum capacity
@@ -118,22 +155,45 @@ satellites = new THREE.InstancedMesh(
 );
 satellites.instanceMatrix.setUsage(THREE.DynamicDrawUsage); // Allow updates
 satellites.count = 0; // No instances yet
-scene.add(satellites);
+earth.add(satellites); // Add satellites as a child of Earth
 
 // Matrix for position updates
 const satelliteMatrix = new THREE.Matrix4();
 
-// --- Trajectories ---
+// --- Trajectories (initialized once) ---
 let currentTrajectory = null; // Track the trajectory for the currently highlighted object
 let selectedTrajectory = null; // Track the trajectory for the currently selected object
+
+// Create placeholder lines (can use empty geometry initially)
+const emptyGeometry = new THREE.BufferGeometry();
+const placeholderMaterial = new THREE.LineBasicMaterial({ visible: false }); // Material doesn't matter much here
+
+currentTrajectory = new THREE.Line(emptyGeometry, placeholderMaterial.clone());
+currentTrajectory.visible = false;
+earth.add(currentTrajectory);
+
+selectedTrajectory = new THREE.Line(
+  emptyGeometry.clone(),
+  placeholderMaterial.clone()
+);
+selectedTrajectory.visible = false;
+earth.add(selectedTrajectory);
 
 // --- Global State ---
 let currentTime = new Date();
 let isRealTime = false;
-let initialDataLoaded = false; // Flag to track if initial load is done
 
 // --- Web worker ---
 const worker = new Worker("propagation_worker.js");
+
+// --- ADDED: Rotation for Earth and Satellites ---
+const earthSystemRotationAxis = new THREE.Vector3(0, 1, 0); // Y-axis
+const earthSystemRotationAngle = Math.PI / 2;
+const earthSystemRotationQuaternion = new THREE.Quaternion().setFromAxisAngle(
+  earthSystemRotationAxis,
+  earthSystemRotationAngle
+);
+const satelliteRelativePosition = new THREE.Vector3(); // Reusable vector for rotation
 
 // Modified worker message handler
 worker.onmessage = (e) => {
@@ -148,10 +208,6 @@ worker.onmessage = (e) => {
 
   const earthPos = earth.position;
 
-  // Temporary vectors for calculations
-  const satEciKm = new THREE.Vector3();
-  const satEclipticKm = new THREE.Vector3();
-
   if (type === "POSITIONS_UPDATE") {
     // Ensure we don't write past the buffer
     if (startIndex + count > config.MAX_SATELLITES) {
@@ -163,11 +219,21 @@ worker.onmessage = (e) => {
     for (let i = 0; i < count; i++) {
       const instanceIndex = startIndex + i;
 
-      // Set position (relative to Earth)
+      // --- ADDED: Rotate satellite position relative to Earth ---
+      // Get original relative position from worker data
+      satelliteRelativePosition.set(
+        batchPositions[i].x,
+        batchPositions[i].y,
+        batchPositions[i].z
+      );
+      // Apply the fixed rotation
+      satelliteRelativePosition.applyQuaternion(earthSystemRotationQuaternion);
+
+      // Set position using the ROTATED vector (relative to Earth) + Earth's scene position
       satelliteMatrix.makeTranslation(
-        batchPositions[i].x + earthPos.x,
-        batchPositions[i].y + earthPos.y,
-        batchPositions[i].z + earthPos.z
+        satelliteRelativePosition.x,
+        satelliteRelativePosition.y,
+        satelliteRelativePosition.z
       );
 
       // Apply to the instanced mesh
@@ -194,9 +260,12 @@ worker.onmessage = (e) => {
         position.setFromMatrixPosition(satelliteMatrix);
         selectedSatellite.position.copy(position);
       }
+
+      // Update selected trajectory
+      requestTrajectory(selectedIndex);
     }
     if (highlightedIndex !== -1) {
-      // Update marker position, but info panel is handled by hover
+      // Update marker position
       if (highlightedSatellite) {
         // Get position from instanced mesh
         satellites.getMatrixAt(highlightedIndex, satelliteMatrix);
@@ -204,42 +273,54 @@ worker.onmessage = (e) => {
         position.setFromMatrixPosition(satelliteMatrix);
         highlightedSatellite.position.copy(position);
       }
+
+      // Update highlighted trajectory
+      requestTrajectory(highlightedIndex);
     }
   } else if (type === "TRAJECTORY_DATA") {
     // Received orbital trajectory data
 
-    // Move trajectory points so they're around earth
+    // --- ADDED: Rotate trajectory points relative to Earth ---
     trajectoryPoints.forEach((point) => {
-      point.x += earthPos.x;
-      point.y += earthPos.y;
-      point.z += earthPos.z;
+      // Apply the same quaternion used for satellite positions
+      const relativePoint = new THREE.Vector3(point.x, point.y, point.z);
+      relativePoint.applyQuaternion(earthSystemRotationQuaternion);
+      // Update the point coordinates with the rotated values
+      point.x = relativePoint.x;
+      point.y = relativePoint.y;
+      point.z = relativePoint.z;
     });
+    // --- END Rotation ---
 
-    if (satelliteIndex === selectedIndex) {
+    if (satelliteIndex === selectedIndex && selectedTrajectory) {
       // Trajectory is for the currently SELECTED satellite
-      if (selectedTrajectory) {
-        selectedTrajectory.geometry.dispose();
-        selectedTrajectory.material.dispose();
-        scene.remove(selectedTrajectory);
-      }
-      selectedTrajectory = buildTrajectoryLine(
+      // Dispose old geometry and material
+      if (selectedTrajectory.geometry) selectedTrajectory.geometry.dispose();
+      if (selectedTrajectory.material) selectedTrajectory.material.dispose();
+
+      // Create new geometry/material and assign to existing line
+      const newGeoMat = buildTrajectoryLine(
         trajectoryPoints,
         config.SELECTION_COLOR
-      ); // Use selection color
-      scene.add(selectedTrajectory);
-    } else if (satelliteIndex === highlightedIndex) {
+      );
+      selectedTrajectory.geometry = newGeoMat.geometry;
+      selectedTrajectory.material = newGeoMat.material;
+      selectedTrajectory.visible = true; // Make it visible
+    } else if (satelliteIndex === highlightedIndex && currentTrajectory) {
       // Trajectory is for the currently HIGHLIGHTED (hovered) satellite
-      // Only add if the highlight is still active for this index
-      if (currentTrajectory) {
-        currentTrajectory.geometry.dispose();
-        currentTrajectory.material.dispose();
-        scene.remove(currentTrajectory);
-      }
-      currentTrajectory = buildTrajectoryLine(
+      // Only update if the highlight is still active for this index
+      // Dispose old geometry and material
+      if (currentTrajectory.geometry) currentTrajectory.geometry.dispose();
+      if (currentTrajectory.material) currentTrajectory.material.dispose();
+
+      // Create new geometry/material and assign to existing line
+      const newGeoMat = buildTrajectoryLine(
         trajectoryPoints,
         config.HIGHLIGHT_COLOR
-      ); // Use highlight color
-      scene.add(currentTrajectory);
+      );
+      currentTrajectory.geometry = newGeoMat.geometry;
+      currentTrajectory.material = newGeoMat.material;
+      currentTrajectory.visible = true; // Make it visible
     }
   }
 };
@@ -292,7 +373,10 @@ function buildTrajectoryLine(points, color) {
     transparent: true,
   });
 
-  return new THREE.Line(lineGeometry, lineMaterial);
+  return {
+    geometry: lineGeometry,
+    material: lineMaterial,
+  };
 }
 
 async function fetchTLE() {
@@ -493,7 +577,7 @@ function updatePositions() {
   const uranusPosAU = getPlanetPosition("uranus", currentTime);
   const neptunePosAU = getPlanetPosition("neptune", currentTime);
   const plutoPosAU = getPlanetPosition("pluto", currentTime); // Note: Pluto needs appropriate elements
-  const moonPosAU = getMoonPosition(currentTime, earthPosAU); // Geocentric AU
+  const moonGeoPosAU = getMoonPosition(currentTime); // Get GEOCENTRIC Moon position in AU
 
   // Apply scale to get ABSOLUTE scaled heliocentric positions
   const mercuryAbsPos = mercuryPosAU.multiplyScalar(scaleFactor);
@@ -506,31 +590,93 @@ function updatePositions() {
   const neptuneAbsPos = neptunePosAU.multiplyScalar(scaleFactor);
   const plutoAbsPos = plutoPosAU.multiplyScalar(scaleFactor);
 
-  // --- Moon Position Calculation Refinement ---
-  // Convert moon's geocentric AU position to heliocentric AU
-  const moonHelioAU = earthPosAU.clone().add(moonPosAU);
-  // Scale moon's heliocentric position
-  const moonAbsPosScaled = moonHelioAU.multiplyScalar(scaleFactor);
-
   // Apply the CURRENT sceneOffset to the ABSOLUTE positions to get final scene position
   // Sun is always at the heliocentric origin (0,0,0) before offset
-  sun.position.copy(new THREE.Vector3(0,0,0)).add(sceneOffset);
+  sun.position.copy(new THREE.Vector3(0, 0, 0)).add(sceneOffset);
   mercury.position.copy(mercuryAbsPos).add(sceneOffset);
   venus.position.copy(venusAbsPos).add(sceneOffset);
-  earth.position.copy(earthAbsPos).add(sceneOffset); // Earth's final position in the scene
+  earth.position.copy(earthAbsPos).add(sceneOffset);
   mars.position.copy(marsAbsPos).add(sceneOffset);
   jupiter.position.copy(jupiterAbsPos).add(sceneOffset);
   saturn.position.copy(saturnAbsPos).add(sceneOffset);
   uranus.position.copy(uranusAbsPos).add(sceneOffset);
   neptune.position.copy(neptuneAbsPos).add(sceneOffset);
   pluto.position.copy(plutoAbsPos).add(sceneOffset);
-  moon.position.copy(moonAbsPosScaled).add(sceneOffset); // Use scaled heliocentric position
-
 
   // --- Update Axial Rotations ---
-  // Earth rotation based on GMST, adjusted for initial texture alignment (+Z axis)
+  const J2000 = new Date(Date.UTC(2000, 0, 1, 12, 0, 0));
+  const elapsedDays =
+    (currentTime.getTime() - J2000.getTime()) / (1000 * 60 * 60 * 24);
+
+  // Helper function to apply rotation and tilt
+  function applyRotationAndTilt(body, siderealPeriodDays, axialTiltDegrees) {
+    const dailyRotationAngle = (elapsedDays / siderealPeriodDays) * 2 * Math.PI;
+    const tiltAngleRadians = THREE.MathUtils.degToRad(axialTiltDegrees);
+
+    // Create quaternions for daily rotation (around Y) and tilt (around Z)
+    const dailyRotationQuat = new THREE.Quaternion().setFromAxisAngle(
+      new THREE.Vector3(0, 1, 0),
+      dailyRotationAngle
+    );
+    const tiltQuat = new THREE.Quaternion().setFromAxisAngle(
+      new THREE.Vector3(0, 0, 1),
+      tiltAngleRadians
+    );
+
+    // Combine rotations: Apply daily rotation first, then tilt
+    // The order matters: tiltQuat.multiply(dailyRotationQuat) means apply dailyRotationQuat then tiltQuat
+    const combinedQuat = new THREE.Quaternion().multiplyQuaternions(
+      tiltQuat,
+      dailyRotationQuat
+    );
+
+    // Apply the combined rotation to the body
+    body.setRotationFromQuaternion(combinedQuat);
+  }
+
+  // Apply rotations to planets
+  // Earth: Special handling due to gmst and initial rotation offset needed for texture
   const gmst = satellite.gstime(currentTime);
-  earth.rotation.y = gmst + Math.PI / 2;
+  const earthDailyRotationAngle = gmst; // Earth's rotation relative to vernal equinox
+  const earthTiltAngleRadians = THREE.MathUtils.degToRad(EARTH_AXIAL_TILT);
+
+  // Quaternions for each component
+  const earthDailyRotationQuat = new THREE.Quaternion().setFromAxisAngle(
+    new THREE.Vector3(0, 1, 0),
+    earthDailyRotationAngle
+  );
+  const earthTiltQuat = new THREE.Quaternion().setFromAxisAngle(
+    new THREE.Vector3(0, 0, 1),
+    earthTiltAngleRadians
+  );
+  // Re-introduce the initial correction rotation (already defined globally)
+  const initialCorrectionQuat = new THREE.Quaternion().setFromAxisAngle(
+    earthSystemRotationAxis,
+    earthSystemRotationAngle
+  );
+
+  // Combine: Apply daily rotation, then initial correction, then tilt.
+  // Order: tilt * initial * daily
+  const earthCombinedQuat = new THREE.Quaternion()
+    .multiplyQuaternions(earthTiltQuat, initialCorrectionQuat) // Apply tilt after initial correction
+    .multiply(earthDailyRotationQuat); // Apply initial correction after daily rotation
+
+  earth.setRotationFromQuaternion(earthCombinedQuat);
+
+  applyRotationAndTilt(mercury, 58.65, MERCURY_AXIAL_TILT);
+  applyRotationAndTilt(venus, -243.02, VENUS_AXIAL_TILT); // Retrograde
+  applyRotationAndTilt(mars, 1.026, MARS_AXIAL_TILT);
+  applyRotationAndTilt(jupiter, 0.414, JUPITER_AXIAL_TILT);
+  applyRotationAndTilt(saturn, 0.444, SATURN_AXIAL_TILT);
+  applyRotationAndTilt(uranus, -0.718, URANUS_AXIAL_TILT); // Retrograde
+  applyRotationAndTilt(neptune, 0.671, NEPTUNE_AXIAL_TILT);
+  applyRotationAndTilt(pluto, -6.387, PLUTO_AXIAL_TILT); // Retrograde (Dwarf Planet)
+
+  // --- Calculate final Moon position ---
+  // Scale the geocentric moon vector (AU) to scene scale
+  const moonGeoScaled = moonGeoPosAU.multiplyScalar(scaleFactor);
+  // Add the scaled geocentric vector to Earth's FINAL scene position (which includes offset)
+  moon.position.copy(earth.position).add(moonGeoScaled);
 
   // Moon: Tidal locking - always face Earth
   // Need to handle the case where moon and earth are at the same position briefly during setup
@@ -553,25 +699,6 @@ function updatePositions() {
     );
     moon.setRotationFromQuaternion(quaternion);
   }
-
-  // Approximate rotations for other planets (can be refined with precise periods)
-  // Calculate rotation based on elapsed time since an arbitrary epoch (e.g., J2000)
-  const J2000 = new Date(Date.UTC(2000, 0, 1, 12, 0, 0));
-  const elapsedDays =
-    (currentTime.getTime() - J2000.getTime()) / (1000 * 60 * 60 * 24);
-
-  // Rotation = (elapsedDays / siderealPeriodDays) * 2 * PI
-  // Note: Need to check initial tilt axes in celestial.js for consistency
-  mercury.rotation.y = (elapsedDays / 58.65) * 2 * Math.PI;
-  venus.rotation.y = (elapsedDays / -243.02) * 2 * Math.PI; // Retrograde
-  mars.rotation.y = (elapsedDays / 1.026) * 2 * Math.PI;
-  jupiter.rotation.y = (elapsedDays / 0.414) * 2 * Math.PI;
-  saturn.rotation.y = (elapsedDays / 0.444) * 2 * Math.PI;
-  uranus.rotation.y = (elapsedDays / -0.718) * 2 * Math.PI; // Retrograde
-  neptune.rotation.y = (elapsedDays / 0.671) * 2 * Math.PI;
-  pluto.rotation.y = (elapsedDays / -6.387) * 2 * Math.PI; // Retrograde (Dwarf Planet)
-
-  // --- End Celestial Body Updates ---
 
   // --- Request satellite position updates from the worker ---
   // Only send data if we actually have TLEs loaded
@@ -605,20 +732,22 @@ function requestTrajectory(satelliteIndex) {
 // Function to clear trajectory when not hovering
 function clearTrajectory() {
   if (currentTrajectory) {
-    currentTrajectory.geometry.dispose(); // Dispose geometry
-    currentTrajectory.material.dispose(); // Dispose material
-    scene.remove(currentTrajectory);
-    currentTrajectory = null;
+    // currentTrajectory.geometry.dispose(); // Dispose geometry <-- REMOVE
+    // currentTrajectory.material.dispose(); // Dispose material <-- REMOVE
+    // earth.remove(currentTrajectory); // Explicitly remove from Earth <-- REMOVE
+    currentTrajectory.visible = false; // Just hide
+    // currentTrajectory = null; // <-- Don't nullify
   }
   document.getElementById("satelliteInfo").style.display = "none";
 }
 
 function clearSelectedTrajectory() {
   if (selectedTrajectory) {
-    selectedTrajectory.geometry.dispose(); // Dispose geometry
-    selectedTrajectory.material.dispose(); // Dispose material
-    scene.remove(selectedTrajectory);
-    selectedTrajectory = null;
+    // selectedTrajectory.geometry.dispose(); // Dispose geometry <-- REMOVE
+    // selectedTrajectory.material.dispose(); // Dispose material <-- REMOVE
+    // earth.remove(selectedTrajectory); // Explicitly remove from Earth <-- REMOVE
+    selectedTrajectory.visible = false; // Just hide
+    // selectedTrajectory = null; // <-- Don't nullify
   }
 }
 
@@ -627,36 +756,19 @@ function highlightSatellite(index) {
   // Store the index for comparison
   highlightedIndex = index;
 
-  // Create a highlighted point
-  const highlightGeometry = new THREE.SphereGeometry(0.02, 16, 16);
-  const highlightMaterial = new THREE.MeshBasicMaterial({
-    color: 0x00ffff, // Cyan for hover highlight
-    transparent: true,
-    opacity: 0.8,
-  });
-
-  highlightedSatellite = new THREE.Mesh(highlightGeometry, highlightMaterial);
-
-  // Position the highlight at the satellite position
-  satellites.getMatrixAt(index, satelliteMatrix);
-  const satPosition = new THREE.Vector3();
-  satPosition.setFromMatrixPosition(satelliteMatrix);
-  highlightedSatellite.position.copy(satPosition);
-
-  scene.add(highlightedSatellite);
+  // Position the existing highlight marker
+  updateMarkerPosition(highlightedSatellite, index);
+  highlightedSatellite.visible = true; // Make it visible
 
   // Update the satellite info display using the specific panel
   displayInfoPanel(index, satelliteInfoPanel);
-
-  // --- ADDED: Update marker position immediately on highlight/select ---
-  // This ensures the marker appears instantly before the worker responds
-  updateMarkerPosition(highlightedSatellite, index);
 }
 
 function resetHighlight() {
   if (highlightedSatellite) {
-    scene.remove(highlightedSatellite);
-    highlightedSatellite = null;
+    // earth.remove(highlightedSatellite); // <-- Don't remove, just hide
+    highlightedSatellite.visible = false;
+    // highlightedSatellite = null; // <-- Don't nullify
     highlightedIndex = -1;
 
     // Clear the hover trajectory
@@ -674,23 +786,9 @@ function selectSatellite(index) {
   // Store the index for comparison
   selectedIndex = index;
 
-  // Create a highlighted point
-  const selectionGeometry = new THREE.SphereGeometry(0.025, 16, 16); // Slightly larger
-  const selectionMaterial = new THREE.MeshBasicMaterial({
-    color: 0xffaa00, // Orange/Yellow for selection
-    transparent: true,
-    opacity: 0.9,
-  });
-
-  selectedSatellite = new THREE.Mesh(selectionGeometry, selectionMaterial);
-
-  // Position the selection marker at the satellite position
-  satellites.getMatrixAt(index, satelliteMatrix);
-  const satPosition = new THREE.Vector3();
-  satPosition.setFromMatrixPosition(satelliteMatrix);
-  selectedSatellite.position.copy(satPosition);
-
-  scene.add(selectedSatellite);
+  // Position the existing selection marker
+  updateMarkerPosition(selectedSatellite, index);
+  selectedSatellite.visible = true; // Make it visible
 
   // Update the selected satellite info display
   displayInfoPanel(index, selectedSatelliteInfoPanel);
@@ -698,16 +796,13 @@ function selectSatellite(index) {
   satelliteInfoPanel.style.display = "none";
 
   requestTrajectory(selectedIndex);
-
-  // --- ADDED: Update marker position immediately on highlight/select ---
-  // This ensures the marker appears instantly before the worker responds
-  updateMarkerPosition(selectedSatellite, index);
 }
 
 function clearSelection() {
   if (selectedSatellite) {
-    scene.remove(selectedSatellite);
-    selectedSatellite = null;
+    // earth.remove(selectedSatellite); // <-- Don't remove, just hide
+    selectedSatellite.visible = false;
+    // selectedSatellite = null; // <-- Don't nullify
     selectedIndex = -1;
     // Hide selected info panel
     selectedSatelliteInfoPanel.style.display = "none";
@@ -741,8 +836,8 @@ document.getElementById("backward").addEventListener("click", () => {
 document.getElementById("play").addEventListener("click", () => {
   isRealTime = !isRealTime;
   document.getElementById("play").textContent = isRealTime
-    ? "⏸" // Pause icon
-    : "▶"; // Play icon
+    ? "⏸︎" // Pause icon
+    : "⏵︎"; // Play icon
   if (isRealTime) {
     // When switching to real-time, update immediately
     currentTime = new Date();
@@ -772,29 +867,117 @@ function onMouseMove(event) {
   mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
   mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
 
-  // Raycasting
   raycaster.setFromCamera(mouse, camera);
 
-  // Calculate objects intersecting the picking ray
-  const intersects = raycaster.intersectObjects([satellites, earth], true);
+  // Raycast against Earth recursively, which includes satellites and markers
+  const intersects = raycaster.intersectObject(earth, true);
 
-  let currentHoverIndex = -1; // Track index hovered this frame
+  // --- Find first non-occluded hits ---
+  let satelliteInstanceIndex = -1;
+  let hoveringVisibleMarker = false;
 
-  if (intersects.length > 0 && intersects[0].object !== earth) {
-    // We hit a satellite - instanced meshes return instanceId
-    const index = intersects[0].instanceId;
-    currentHoverIndex = index;
+  for (const intersect of intersects) {
+    // If we hit the Earth mesh, stop processing further intersections (occlusion)
+    if (intersect.object === earth) {
+      break;
+    }
 
-    // Only process if it's a different satellite than currently highlighted
-    if (index !== highlightedIndex) {
-      resetHighlight(); // Remove previous highlight
-      highlightSatellite(index); // Highlight the new satellite
-      if (index !== selectedIndex) {
-        // Don't request hover trajectory if it's already selected
-        requestTrajectory(index); // Request hover trajectory
+    // Check for first hit on the instanced mesh (if not found yet)
+    if (
+      satelliteInstanceIndex === -1 &&
+      intersect.object === satellites &&
+      intersect.instanceId !== undefined
+    ) {
+      satelliteInstanceIndex = intersect.instanceId;
+    }
+
+    // Check if we hit the *currently visible* highlight marker
+    if (
+      highlightedSatellite.visible &&
+      intersect.object === highlightedSatellite
+    ) {
+      hoveringVisibleMarker = true;
+    }
+
+    // Optimization: if we found both possible valid hits, we can stop early
+    // (Since Earth check happens first, these hits are guaranteed to be non-occluded)
+    if (satelliteInstanceIndex !== -1 && hoveringVisibleMarker) {
+      break;
+    }
+  }
+
+  // --- Decide Action (based on non-occluded hits found *before* hitting Earth) ---
+  let finalAction = "reset"; // Default action
+  let interactionPoint = null; // World point of interaction
+  let potentialHitObject = null;
+
+  // Find first non-occluded hit (satellite or marker)
+  for (const intersect of intersects) {
+    if (intersect.object === earth) break; // Stop if Earth is hit
+
+    if (intersect.object === satellites && intersect.instanceId !== undefined) {
+      finalAction = "highlight";
+      potentialHitObject = intersect.object;
+      interactionPoint = intersect.point;
+      satelliteInstanceIndex = intersect.instanceId; // Keep track of index for logic later
+      break; // Satellite found, highest priority
+    }
+    if (
+      intersect.object === highlightedSatellite &&
+      highlightedSatellite.visible
+    ) {
+      finalAction = "keep";
+      potentialHitObject = intersect.object;
+      interactionPoint = intersect.point;
+      // Don't break, satellite might be closer
+    }
+  }
+
+  // --- Occlusion Check using secondary raycast ---
+  let isOccluded = false;
+  if (interactionPoint && potentialHitObject) {
+    // Only check if we found a potential target
+    const camPos = camera.position;
+    const distanceToTarget = camPos.distanceTo(interactionPoint);
+
+    // Create ray from camera *towards* the interaction point
+    const occlusionRaycaster = new THREE.Raycaster();
+    const direction = new THREE.Vector3()
+      .subVectors(interactionPoint, camPos)
+      .normalize();
+    occlusionRaycaster.set(camPos, direction);
+
+    // Raycast *only* against the earth mesh (non-recursive)
+    const earthIntersects = occlusionRaycaster.intersectObject(earth, false);
+
+    if (earthIntersects.length > 0) {
+      const distanceToEarthHit = earthIntersects[0].distance;
+      // If Earth is hit closer than the target object (add small tolerance)
+      if (distanceToEarthHit < distanceToTarget - 0.001) {
+        isOccluded = true;
+        finalAction = "reset"; // Override action if occluded
       }
     }
+  }
+
+  // --- Execute Final Action ---
+  if (finalAction === "highlight") {
+    // Verify we still have the index (should be guaranteed if action is highlight)
+    if (
+      satelliteInstanceIndex !== -1 &&
+      satelliteInstanceIndex !== highlightedIndex
+    ) {
+      resetHighlight();
+      highlightSatellite(satelliteInstanceIndex);
+      if (satelliteInstanceIndex !== selectedIndex) {
+        requestTrajectory(satelliteInstanceIndex);
+      }
+    }
+    // If index matches highlightedIndex, do nothing
+  } else if (finalAction === "keep") {
+    // Do nothing - marker was hit directly and wasn't occluded
   } else {
+    // finalAction === 'reset'
     resetHighlight();
   }
 }
@@ -856,20 +1039,20 @@ const targetButtons = document.querySelectorAll("#target-controls button");
 
 // --- Tooltip Management ---
 const planetTooltips = {};
-Object.keys(targetObjects).forEach(planetName => {
-    const tooltipId = `tooltip-${planetName}`;
-    const element = document.getElementById(tooltipId);
+Object.keys(targetObjects).forEach((planetName) => {
+  const tooltipId = `tooltip-${planetName}`;
+  const element = document.getElementById(tooltipId);
 
-    if (element) {
-        planetTooltips[planetName] = element;
-        // Add double-click listener
-        element.addEventListener('dblclick', () => {
-          console.log(`Double-clicking ${planetName}`);
-            setCameraTarget(planetName);
-        });
-    } else {
-        console.warn(`Tooltip element not found for ID: ${tooltipId}`);
-    }
+  if (element) {
+    planetTooltips[planetName] = element;
+    // Add double-click listener
+    element.addEventListener("dblclick", () => {
+      console.log(`Double-clicking ${planetName}`);
+      setCameraTarget(planetName);
+    });
+  } else {
+    console.warn(`Tooltip element not found for ID: ${tooltipId}`);
+  }
 });
 
 // Function to set the active target
@@ -892,17 +1075,17 @@ function setCameraTarget(targetName) {
   const scaleFactor = config.AU * config.SCALE;
   let targetAbsolutePosition;
 
-  if (targetName === 'sun') {
-      targetAbsolutePosition = new THREE.Vector3(0, 0, 0); // Sun is heliocentric origin
-  } else if (targetName === 'moon') {
-      const earthPosAU = getPlanetPosition("earth", currentTime);
-      const moonPosAU = getMoonPosition(currentTime, earthPosAU); // Geocentric AU
-      const moonHelioAU = earthPosAU.clone().add(moonPosAU); // Heliocentric AU
-      targetAbsolutePosition = moonHelioAU.multiplyScalar(scaleFactor); // Scaled Heliocentric
+  if (targetName === "sun") {
+    targetAbsolutePosition = new THREE.Vector3(0, 0, 0); // Sun is heliocentric origin
+  } else if (targetName === "moon") {
+    const earthPosAU = getPlanetPosition("earth", currentTime); // Heliocentric Earth AU
+    const moonGeoPosAU = getMoonPosition(currentTime); // Geocentric Moon AU
+    const moonHelioAU = earthPosAU.clone().add(moonGeoPosAU); // Calculate Heliocentric Moon AU here
+    targetAbsolutePosition = moonHelioAU.multiplyScalar(scaleFactor); // Scaled Heliocentric
   } else {
-      // For planets
-      const planetPosAU = getPlanetPosition(targetName, currentTime); // Heliocentric AU
-      targetAbsolutePosition = planetPosAU.multiplyScalar(scaleFactor); // Scaled Heliocentric
+    // For planets
+    const planetPosAU = getPlanetPosition(targetName, currentTime); // Heliocentric AU
+    targetAbsolutePosition = planetPosAU.multiplyScalar(scaleFactor); // Scaled Heliocentric
   }
 
   // --- Calculate Offsets ---
@@ -917,8 +1100,14 @@ function setCameraTarget(targetName) {
   const newDistance = objRadius * 5; // Use a factor of the radius for distance
 
   // Calculate the desired camera position relative to the target's ABSOLUTE position
-  const cameraOffsetVector = new THREE.Vector3(newDistance, newDistance / 2, newDistance);
-  const desiredCameraPositionAbsolute = targetAbsolutePosition.clone().add(cameraOffsetVector);
+  const cameraOffsetVector = new THREE.Vector3(
+    newDistance,
+    newDistance / 2,
+    newDistance
+  );
+  const desiredCameraPositionAbsolute = targetAbsolutePosition
+    .clone()
+    .add(cameraOffsetVector);
 
   // 1. Update controls target to the new target's ABSOLUTE position first
   controls.target.copy(targetAbsolutePosition);
@@ -932,11 +1121,11 @@ function setCameraTarget(targetName) {
   // 4. Update min/max distance for controls based on the object's radius
   controls.minDistance = objRadius * config.CAMERA_MIN_DISTANCE_FACTOR;
   // Increase max distance significantly when focused on smaller objects like moon/planets
-  const maxDistFactor = (targetName === 'sun' || targetName === 'jupiter' || targetName === 'saturn')
-                         ? config.CAMERA_MAX_DISTANCE_FACTOR
-                         : config.CAMERA_MAX_DISTANCE_FACTOR * 10;
+  const maxDistFactor =
+    targetName === "sun" || targetName === "jupiter" || targetName === "saturn"
+      ? config.CAMERA_MAX_DISTANCE_FACTOR
+      : config.CAMERA_MAX_DISTANCE_FACTOR * 10;
   controls.maxDistance = objRadius * maxDistFactor;
-
 
   // 5. Update the global sceneOffset variable *BEFORE* calling updatePositions
   sceneOffset.copy(newOffset);
@@ -946,20 +1135,20 @@ function setCameraTarget(targetName) {
 
   // --- Adjust Existing Scene Elements ---
   // Apply the deltaOffset to markers to keep them in the correct relative position
-   if (highlightedSatellite) {
-      highlightedSatellite.position.add(deltaOffset);
-   }
-   if (selectedSatellite) {
-      selectedSatellite.position.add(deltaOffset);
-   }
+  if (highlightedSatellite) {
+    highlightedSatellite.position.add(deltaOffset);
+  }
+  if (selectedSatellite) {
+    selectedSatellite.position.add(deltaOffset);
+  }
 
-   // Clear trajectories as they are relative to the old frame/offset
-   clearTrajectory();
-   clearSelectedTrajectory();
-   // If a satellite was selected, re-request its trajectory in the new frame
-   if (selectedIndex !== -1) {
-     requestTrajectory(selectedIndex);
-   }
+  // Clear trajectories as they are relative to the old frame/offset
+  clearTrajectory();
+  clearSelectedTrajectory();
+  // If a satellite was selected, re-request its trajectory in the new frame
+  if (selectedIndex !== -1) {
+    requestTrajectory(selectedIndex);
+  }
 
   // 7. Update all object positions based on the *new* sceneOffset
   // This recalculates all celestial body positions with the new offset applied.
@@ -1039,50 +1228,55 @@ initTLEs(); // This is async, won't block rendering
 
 // Function to update planet tooltips
 function updatePlanetTooltips() {
-    const width = renderer.domElement.clientWidth;
-    const height = renderer.domElement.clientHeight;
-    const cameraPosition = camera.position; // Cache camera position
+  const width = renderer.domElement.clientWidth;
+  const height = renderer.domElement.clientHeight;
+  const cameraPosition = camera.position; // Cache camera position
 
-    Object.keys(targetObjects).forEach(planetName => {
-        const planet = targetObjects[planetName];
-        const tooltip = planetTooltips[planetName];
+  Object.keys(targetObjects).forEach((planetName) => {
+    const planet = targetObjects[planetName];
+    const tooltip = planetTooltips[planetName];
 
-        if (!planet || !tooltip) return; // Skip if planet or tooltip missing
+    if (!planet || !tooltip) return; // Skip if planet or tooltip missing
 
-        // Hide tooltip if it's the current camera target
-        if (planet === cameraTargetObject) {
-            tooltip.style.display = 'none';
-            return;
-        }
+    // Hide tooltip if it's the current camera target
+    if (planet === cameraTargetObject) {
+      tooltip.style.display = "none";
+      return;
+    }
 
-        // Calculate screen position
-        const worldPosition = new THREE.Vector3();
-        planet.getWorldPosition(worldPosition); // Get world position
+    // Calculate screen position
+    const worldPosition = new THREE.Vector3();
+    planet.getWorldPosition(worldPosition); // Get world position
 
-        // Check if the planet is roughly behind the camera (simple check)
-        const vectorToPlanet = worldPosition.clone().sub(cameraPosition);
-        if (camera.getWorldDirection(new THREE.Vector3()).dot(vectorToPlanet) < 0) {
-             tooltip.style.display = 'none';
-             return;
-        }
+    // Check if the planet is roughly behind the camera (simple check)
+    const vectorToPlanet = worldPosition.clone().sub(cameraPosition);
+    if (camera.getWorldDirection(new THREE.Vector3()).dot(vectorToPlanet) < 0) {
+      tooltip.style.display = "none";
+      return;
+    }
 
-        // Project to screen space
-        const screenPosition = worldPosition.clone().project(camera);
+    // Project to screen space
+    const screenPosition = worldPosition.clone().project(camera);
 
-        // Convert NDC (-1 to +1) to screen coordinates (pixels)
-        const screenX = (screenPosition.x * 0.5 + 0.5) * width;
-        const screenY = (-screenPosition.y * 0.5 + 0.5) * height;
+    // Convert NDC (-1 to +1) to screen coordinates (pixels)
+    const screenX = (screenPosition.x * 0.5 + 0.5) * width;
+    const screenY = (-screenPosition.y * 0.5 + 0.5) * height;
 
-        // Check if the projected point is within the screen bounds (NDC z check handles points behind camera)
-        const isBehindCamera = screenPosition.z > 1.0;
-        const isOnScreen = screenX >= 0 && screenX <= width && screenY >= 0 && screenY <= height && !isBehindCamera;
+    // Check if the projected point is within the screen bounds (NDC z check handles points behind camera)
+    const isBehindCamera = screenPosition.z > 1.0;
+    const isOnScreen =
+      screenX >= 0 &&
+      screenX <= width &&
+      screenY >= 0 &&
+      screenY <= height &&
+      !isBehindCamera;
 
-        if (isOnScreen) {
-            tooltip.style.left = `${screenX}px`;
-            tooltip.style.top = `${screenY}px`;
-            tooltip.style.display = 'block';
-        } else {
-            tooltip.style.display = 'none';
-        }
-    });
+    if (isOnScreen) {
+      tooltip.style.left = `${screenX}px`;
+      tooltip.style.top = `${screenY}px`;
+      tooltip.style.display = "block";
+    } else {
+      tooltip.style.display = "none";
+    }
+  });
 }

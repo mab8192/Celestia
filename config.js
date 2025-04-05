@@ -30,3 +30,14 @@ export const SATURN_RADIUS = 58232 * SCALE; // km scaled
 export const URANUS_RADIUS = 25362 * SCALE; // km scaled
 export const NEPTUNE_RADIUS = 24622 * SCALE; // km scaled
 export const PLUTO_RADIUS = 1188 * SCALE; // km scaled
+
+// --- Axial Tilts (degrees, relative to orbital plane) ---
+export const MERCURY_AXIAL_TILT = 0.03;
+export const VENUS_AXIAL_TILT = 177.3;
+export const EARTH_AXIAL_TILT = 23.44;
+export const MARS_AXIAL_TILT = 25.19;
+export const JUPITER_AXIAL_TILT = 3.13;
+export const SATURN_AXIAL_TILT = 26.73;
+export const URANUS_AXIAL_TILT = 97.77;
+export const NEPTUNE_AXIAL_TILT = 28.32;
+export const PLUTO_AXIAL_TILT = 119.61; // Dwarf Planet
