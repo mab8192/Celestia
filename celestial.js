@@ -23,6 +23,16 @@ export function getEarth() {
   const normalMap = textureLoader.load("assets/earth_normal.tif");
   const specularMap = textureLoader.load("assets/earth_specular.tif");
   const cloudTexture = textureLoader.load("assets/earth_clouds.jpg");
+
+  // Set offset so 0 longitude is at x=0
+  dayTexture.offset.x = 0.5;
+  nightTexture.offset.x = 0.5;
+  cloudTexture.offset.x = 0.5;
+  normalMap.offset.x = 0.5;
+  specularMap.offset.x = 0.5;
+
+  console.log(dayTexture);
+
   cloudTexture.wrapS = THREE.RepeatWrapping; // Set horizontal wrapping to repeat
   cloudTexture.generateMipmaps = false; // Disable mipmaps
   cloudTexture.minFilter = THREE.LinearFilter; // Use linear filtering

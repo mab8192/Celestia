@@ -34,7 +34,7 @@ export const PLUTO_RADIUS = 1188 * SCALE; // km scaled
 // --- Axial Tilts (degrees, relative to orbital plane) ---
 export const MERCURY_AXIAL_TILT = 0.03;
 export const VENUS_AXIAL_TILT = 177.3;
-export const EARTH_AXIAL_TILT = 23.44;
+export const EARTH_AXIAL_TILT = 23.5;
 export const MARS_AXIAL_TILT = 25.19;
 export const JUPITER_AXIAL_TILT = 3.13;
 export const SATURN_AXIAL_TILT = 26.73;

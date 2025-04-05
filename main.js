@@ -107,35 +107,32 @@ camera.position.z = 50;
 const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
 
-// --- Reusable Markers (initialized once) ---
-let highlightedSatellite = null;
-let selectedSatellite = null;
-
-const highlightGeometry = new THREE.SphereGeometry(0.02, 16, 16);
-const highlightMaterial = new THREE.MeshBasicMaterial({
-  color: config.HIGHLIGHT_COLOR,
-  transparent: true,
-  opacity: 0.8,
+// Debug spheres
+const xSphereGeom = new THREE.SphereGeometry(0.02, 16, 16);
+const xSphereMat = new THREE.MeshBasicMaterial({
+  color: 0xff0000,
 });
-highlightedSatellite = new THREE.Mesh(highlightGeometry, highlightMaterial);
-highlightedSatellite.visible = false;
-earth.add(highlightedSatellite);
+const xSphere = new THREE.Mesh(xSphereGeom, xSphereMat);
+xSphere.position.set(1, 0, 0);
+earth.add(xSphere);
 
-const selectionGeometry = new THREE.SphereGeometry(0.025, 16, 16); // Slightly larger
-const selectionMaterial = new THREE.MeshBasicMaterial({
-  color: config.SELECTION_COLOR,
-  transparent: true,
-  opacity: 0.9,
+const ySphereGeom = new THREE.SphereGeometry(0.02, 16, 16);
+const ySphereMat = new THREE.MeshBasicMaterial({
+  color: 0x00ff00,
 });
-selectedSatellite = new THREE.Mesh(selectionGeometry, selectionMaterial);
-selectedSatellite.visible = false;
-earth.add(selectedSatellite);
+const ySphere = new THREE.Mesh(ySphereGeom, ySphereMat);
+ySphere.position.set(0, 1, 0);
+earth.add(ySphere);
 
-// --- Keep track of indices ---
-let highlightedIndex = -1;
-let selectedIndex = -1;
+const zSphereGeom = new THREE.SphereGeometry(0.02, 16, 16);
+const zSphereMat = new THREE.MeshBasicMaterial({
+  color: 0x0000ff,
+});
+const zSphere = new THREE.Mesh(zSphereGeom, zSphereMat);
+zSphere.position.set(0, 0, 1);
+earth.add(zSphere);
 
-// --- Satellite Data and Rendering Placeholder ---
+// --- Satellite Data ---
 let tleData = []; // Initialize as empty array
 let satellites;
 let satelliteCount = 0; // Track how many satellites are actually loaded
@@ -160,6 +157,34 @@ earth.add(satellites); // Add satellites as a child of Earth
 // Matrix for position updates
 const satelliteMatrix = new THREE.Matrix4();
 
+// --- Reusable Markers (initialized once) ---
+let highlightedSatellite = null;
+let selectedSatellite = null;
+
+const highlightGeometry = new THREE.SphereGeometry(0.02, 16, 16);
+const highlightMaterial = new THREE.MeshBasicMaterial({
+  color: config.HIGHLIGHT_COLOR,
+  transparent: true,
+  opacity: 0.8,
+});
+highlightedSatellite = new THREE.Mesh(highlightGeometry, highlightMaterial);
+highlightedSatellite.visible = false;
+satellites.add(highlightedSatellite);
+
+const selectionGeometry = new THREE.SphereGeometry(0.025, 16, 16); // Slightly larger
+const selectionMaterial = new THREE.MeshBasicMaterial({
+  color: config.SELECTION_COLOR,
+  transparent: true,
+  opacity: 0.9,
+});
+selectedSatellite = new THREE.Mesh(selectionGeometry, selectionMaterial);
+selectedSatellite.visible = false;
+satellites.add(selectedSatellite);
+
+// --- Keep track of indices ---
+let highlightedIndex = -1;
+let selectedIndex = -1;
+
 // --- Trajectories (initialized once) ---
 let currentTrajectory = null; // Track the trajectory for the currently highlighted object
 let selectedTrajectory = null; // Track the trajectory for the currently selected object
@@ -170,14 +195,14 @@ const placeholderMaterial = new THREE.LineBasicMaterial({ visible: false }); // 
 
 currentTrajectory = new THREE.Line(emptyGeometry, placeholderMaterial.clone());
 currentTrajectory.visible = false;
-earth.add(currentTrajectory);
+satellites.add(currentTrajectory);
 
 selectedTrajectory = new THREE.Line(
   emptyGeometry.clone(),
   placeholderMaterial.clone()
 );
 selectedTrajectory.visible = false;
-earth.add(selectedTrajectory);
+satellites.add(selectedTrajectory);
 
 // --- Global State ---
 let currentTime = new Date();
@@ -185,15 +210,6 @@ let isRealTime = false;
 
 // --- Web worker ---
 const worker = new Worker("propagation_worker.js");
-
-// --- ADDED: Rotation for Earth and Satellites ---
-const earthSystemRotationAxis = new THREE.Vector3(0, 1, 0); // Y-axis
-const earthSystemRotationAngle = Math.PI / 2;
-const earthSystemRotationQuaternion = new THREE.Quaternion().setFromAxisAngle(
-  earthSystemRotationAxis,
-  earthSystemRotationAngle
-);
-const satelliteRelativePosition = new THREE.Vector3(); // Reusable vector for rotation
 
 // Modified worker message handler
 worker.onmessage = (e) => {
@@ -219,19 +235,10 @@ worker.onmessage = (e) => {
     for (let i = 0; i < count; i++) {
       const instanceIndex = startIndex + i;
 
-      // --- ADDED: Rotate satellite position relative to Earth ---
-      // Get original relative position from worker data
-      satelliteRelativePosition.set(
+      satelliteMatrix.makeTranslation(
         batchPositions[i].x,
         batchPositions[i].y,
         batchPositions[i].z
-      );
-
-      // Set position using the ORIGINAL vector from worker (relative to Earth)
-      satelliteMatrix.makeTranslation(
-        satelliteRelativePosition.x,
-        satelliteRelativePosition.y,
-        satelliteRelativePosition.z
       );
 
       // Apply to the instanced mesh
@@ -635,19 +642,13 @@ function updatePositions() {
     new THREE.Vector3(0, 0, 1),
     earthTiltAngleRadians
   );
-  // Re-introduce the initial correction rotation (already defined globally)
-  const initialCorrectionQuat = new THREE.Quaternion().setFromAxisAngle(
-    earthSystemRotationAxis,
-    earthSystemRotationAngle
-  );
 
-  // Combine: Apply daily rotation, then initial correction, then tilt.
-  // Order: tilt * initial * daily
   const earthCombinedQuat = new THREE.Quaternion()
-    .multiplyQuaternions(earthTiltQuat, initialCorrectionQuat) // Apply tilt after initial correction
-    .multiply(earthDailyRotationQuat); // Apply initial correction after daily rotation
+    .multiplyQuaternions(earthTiltQuat, earthDailyRotationQuat) // Apply tilt after daily rotation
 
   earth.setRotationFromQuaternion(earthCombinedQuat);
+  // Unrotate the satellites
+  satellites.setRotationFromQuaternion(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -earthDailyRotationAngle));
 
   applyRotationAndTilt(mercury, 58.65, MERCURY_AXIAL_TILT);
   applyRotationAndTilt(venus, -243.02, VENUS_AXIAL_TILT); // Retrograde
