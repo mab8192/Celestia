@@ -227,9 +227,9 @@ worker.onmessage = (e) => {
         batchPositions[i].z
       );
       // Apply the fixed rotation
-      satelliteRelativePosition.applyQuaternion(earthSystemRotationQuaternion);
+      // satelliteRelativePosition.applyQuaternion(earthSystemRotationQuaternion); // REMOVED
 
-      // Set position using the ROTATED vector (relative to Earth) + Earth's scene position
+      // Set position using the ORIGINAL vector from worker (relative to Earth)
       satelliteMatrix.makeTranslation(
         satelliteRelativePosition.x,
         satelliteRelativePosition.y,
@@ -281,15 +281,15 @@ worker.onmessage = (e) => {
     // Received orbital trajectory data
 
     // --- ADDED: Rotate trajectory points relative to Earth ---
-    trajectoryPoints.forEach((point) => {
-      // Apply the same quaternion used for satellite positions
-      const relativePoint = new THREE.Vector3(point.x, point.y, point.z);
-      relativePoint.applyQuaternion(earthSystemRotationQuaternion);
-      // Update the point coordinates with the rotated values
-      point.x = relativePoint.x;
-      point.y = relativePoint.y;
-      point.z = relativePoint.z;
-    });
+    // trajectoryPoints.forEach((point) => { // REMOVED
+    //   // Apply the same quaternion used for satellite positions
+    //   const relativePoint = new THREE.Vector3(point.x, point.y, point.z);
+    //   relativePoint.applyQuaternion(earthSystemRotationQuaternion);
+    //   // Update the point coordinates with the rotated values
+    //   point.x = relativePoint.x;
+    //   point.y = relativePoint.y;
+    //   point.z = relativePoint.z;
+    // }); // REMOVED
     // --- END Rotation ---
 
     if (satelliteIndex === selectedIndex && selectedTrajectory) {

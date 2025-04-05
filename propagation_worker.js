@@ -78,13 +78,19 @@ function calculateSatellitePosition(satData, date) {
       return { x: 0, y: 0, z: 0 }; // Return origin if error
     }
 
-    const positionEci = positionAndVelocity.position;
+    const positionEci = positionAndVelocity.position; // Position in km (ECI)
 
-    // Convert km to scene units and flip coordinates as needed for three.js
+    // Calculate GMST for the ECI-to-ECEF conversion
+    const gmst = satellite.gstime(date);
+
+    // Convert ECI position to ECEF position
+    const positionEcf = satellite.eciToEcf(positionEci, gmst);
+
+    // Convert km to scene units and flip coordinates as needed for three.js using ECEF
     return {
-      x: positionEci.x * SCALE,
-      y: positionEci.z * SCALE, // Flip y/z for three.js coordinate system
-      z: -positionEci.y * SCALE,
+      x: positionEcf.x * SCALE,
+      y: positionEcf.z * SCALE, // Flip y/z for three.js coordinate system
+      z: -positionEcf.y * SCALE,
     };
   } catch (error) {
     console.error(
@@ -118,16 +124,23 @@ function calculateTrajectory(data) {
         startDate.getTime() + i * timeStep * 60 * 1000
       );
 
-      // Calculate position
+      // Calculate ECI position
       const positionAndVelocity = satellite.propagate(satrec, pointTime);
 
       if (positionAndVelocity.position) {
-        const positionEci = positionAndVelocity.position;
+        const positionEci = positionAndVelocity.position; // Position in km (ECI)
 
+        // Calculate GMST for this specific time point
+        const gmst = satellite.gstime(pointTime);
+
+        // Convert ECI position to ECEF position
+        const positionEcf = satellite.eciToEcf(positionEci, gmst);
+
+        // Use ECEF for trajectory point, applying scale and coordinate flip
         trajectoryPoints.push({
-          x: positionEci.x * SCALE,
-          y: positionEci.z * SCALE, // Flip y/z for three.js
-          z: -positionEci.y * SCALE,
+          x: positionEcf.x * SCALE,
+          y: positionEcf.z * SCALE, // Flip y/z for three.js
+          z: -positionEcf.y * SCALE,
         });
       }
     }
