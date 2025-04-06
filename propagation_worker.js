@@ -80,16 +80,10 @@ function calculateSatellitePosition(satData, date) {
 
     const positionEci = positionAndVelocity.position; // Position in km (ECI)
 
-    // Calculate GMST for the ECI-to-ECEF conversion
-    const gmst = satellite.gstime(date);
-
-    // Convert ECI position to ECEF position
-    const positionEcf = satellite.eciToEcf(positionEci, gmst);
-
     return {
-      x: positionEcf.x * SCALE,
-      y: positionEcf.z * SCALE, // Flip y/z for three.js coordinate system
-      z: -positionEcf.y * SCALE,
+      x: positionEci.x * SCALE,
+      y: positionEci.z * SCALE, // Flip y/z for three.js coordinate system
+      z: -positionEci.y * SCALE,
     };
   } catch (error) {
     console.error(
@@ -129,16 +123,10 @@ function calculateTrajectory(data) {
       if (positionAndVelocity.position) {
         const positionEci = positionAndVelocity.position; // Position in km (ECI)
 
-        // Calculate GMST for the ECI-to-ECEF conversion
-        const gmst = satellite.gstime(date);
-
-        // Convert ECI position to ECEF position
-        const positionEcf = satellite.eciToEcf(positionEci, gmst);
-
         trajectoryPoints.push({
-          x: positionEcf.x * SCALE,
-          y: positionEcf.z * SCALE, // Flip y/z for three.js
-          z: -positionEcf.y * SCALE,
+          x: positionEci.x * SCALE,
+          y: positionEci.z * SCALE, // Flip y/z for three.js
+          z: -positionEci.y * SCALE,
         });
       }
     }
