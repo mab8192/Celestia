@@ -1226,7 +1226,7 @@ function updatePlanetTooltips() {
     if (!planet || !tooltip) return; // Skip if planet or tooltip missing
 
     // Hide tooltip if it's the current camera target
-    if (planet === cameraTargetObject) {
+    if (planet === cameraTargetObject || (planet === moon && cameraTargetObject !== earth)) {
       tooltip.style.display = "none";
       return;
     }
